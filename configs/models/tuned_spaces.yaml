@@ -1,0 +1,71 @@
+# Search spaces for the tuned track (E3): Optuna TPE, same number of trials for every model.
+# Format as in lightgbm_baf_space.yaml. Fixed (non-tuned) settings go under `fixed`.
+
+logreg:
+  fixed: { max_iter: 2000 }
+  space:
+    C: { type: float, low: 0.001, high: 100.0, log: true }
+
+random_forest:
+  fixed: { n_jobs: -1 }
+  space:
+    n_estimators: { type: int, low: 100, high: 600, log: true }
+    max_depth: { type: int, low: 4, high: 40 }
+    min_samples_leaf: { type: int, low: 1, high: 200, log: true }
+    max_features: { type: categorical, choices: [sqrt, 0.3, 0.5] }
+
+xgboost:
+  fixed: { tree_method: hist, n_jobs: -1 }
+  space:
+    n_estimators: { type: int, low: 100, high: 2000, log: true }
+    learning_rate: { type: float, low: 0.01, high: 0.3, log: true }
+    max_depth: { type: int, low: 3, high: 10 }
+    min_child_weight: { type: float, low: 1.0, high: 100.0, log: true }
+    subsample: { type: float, low: 0.5, high: 1.0 }
+    colsample_bytree: { type: float, low: 0.5, high: 1.0 }
+    reg_lambda: { type: float, low: 0.001, high: 10.0, log: true }
+
+lightgbm:
+  fixed: { n_jobs: -1, verbose: -1 }
+  space:
+    n_estimators: { type: int, low: 100, high: 2000, log: true }
+    learning_rate: { type: float, low: 0.01, high: 0.3, log: true }
+    num_leaves: { type: int, low: 8, high: 256, log: true }
+    min_child_samples: { type: int, low: 5, high: 300, log: true }
+    subsample: { type: float, low: 0.5, high: 1.0 }
+    subsample_freq: { type: categorical, choices: [1] }
+    colsample_bytree: { type: float, low: 0.5, high: 1.0 }
+    reg_lambda: { type: float, low: 0.001, high: 10.0, log: true }
+
+catboost:
+  fixed: { verbose: 0, thread_count: -1 }
+  space:
+    iterations: { type: int, low: 200, high: 2000, log: true }
+    learning_rate: { type: float, low: 0.01, high: 0.3, log: true }
+    depth: { type: int, low: 4, high: 10 }
+    l2_leaf_reg: { type: float, low: 1.0, high: 10.0, log: true }
+
+mlp:
+  fixed: { early_stopping: true, max_iter: 200 }
+  space:
+    hidden_layer_sizes: { type: categorical, choices: [[64], [128, 64], [256, 128]] }
+    alpha: { type: float, low: 0.000001, high: 0.01, log: true }
+    learning_rate_init: { type: float, low: 0.0001, high: 0.01, log: true }
+
+tabm:
+  fixed: {}
+  space:
+    lr: { type: float, low: 0.0001, high: 0.003, log: true }
+    weight_decay: { type: float, low: 0.00001, high: 0.01, log: true }
+    n_blocks: { type: int, low: 1, high: 4 }
+    d_block: { type: int, low: 64, high: 1024, log: true }
+    dropout: { type: float, low: 0.0, high: 0.5 }
+
+realmlp:
+  fixed: {}
+  space:
+    lr: { type: float, low: 0.01, high: 0.2, log: true }
+    n_hidden_layers: { type: int, low: 1, high: 4 }
+    hidden_width: { type: int, low: 64, high: 512, log: true }
+    p_drop: { type: float, low: 0.0, high: 0.3 }
+    wd: { type: float, low: 0.00001, high: 0.01, log: true }

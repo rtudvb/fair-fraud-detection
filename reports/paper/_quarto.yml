@@ -1,0 +1,40 @@
+project:
+  output-dir: _output
+  post-render: postprocess_docx.py # Word layout (第一章, 表 1-1, 三線表, 目錄); no-op for PDF
+
+lang: en-US # citeproc locale (et al., English dates); the Typst body language is set in style.typ
+bibliography: references.bib
+csl: apa.csl
+filters:
+  - citations.lua # citations in red (drafting aid); remove this line to turn it off
+number-sections: true
+
+language:
+  section-title-abstract: 摘要
+  section-title-references: 參考文獻
+  toc-title-document: 目錄
+  crossref-fig-title: 圖
+  crossref-tbl-title: 表
+
+crossref:
+  fig-prefix: 圖
+  tbl-prefix: 表
+  sec-prefix: 第
+
+format:
+  typst:
+    papersize: a4
+    margin:
+      x: 2.5cm
+      y: 2.5cm
+    fontsize: 11pt
+    mainfont: "Noto Serif CJK TC"
+    font-paths: [fonts]
+    citeproc: true
+    toc: false # the body builds 目錄、圖目錄、表目錄 itself (index.qmd)
+    include-before-body:
+      - file: style.typ
+    keep-typ: false
+  docx:
+    number-sections: false # Word's own list numbering is attached by postprocess_docx.py
+    toc: false # the body builds 目錄、圖目錄、表目錄 itself (index.qmd)

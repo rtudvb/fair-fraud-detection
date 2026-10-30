@@ -1,0 +1,12 @@
+| model | family | fpr_younger | fpr_older | tpr_younger | tpr_older | fpr_ratio | older_flag_multiple |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| tabicl | foundation | 0.0350 | 0.1273 | 0.4352 | 0.6906 | 0.2748 | 3.6385 |
+| logreg | classical | 0.0361 | 0.1218 | 0.4124 | 0.6673 | 0.2962 | 3.3762 |
+| mlp | deep_learning | 0.0362 | 0.1213 | 0.4325 | 0.6653 | 0.2984 | 3.3511 |
+| tabpfn | foundation | 0.0364 | 0.1203 | 0.4531 | 0.6835 | 0.3024 | 3.3069 |
+| random_forest | classical | 0.0334 | 0.1026 | 0.3663 | 0.5652 | 0.3257 | 3.0702 |
+| catboost | classical | 0.0376 | 0.1141 | 0.4394 | 0.6572 | 0.3294 | 3.0354 |
+| realmlp | deep_learning | 0.0377 | 0.1134 | 0.4643 | 0.6795 | 0.3328 | 3.0046 |
+| xgboost | classical | 0.0379 | 0.1124 | 0.4156 | 0.6229 | 0.3375 | 2.9626 |
+| lightgbm | classical | 0.0381 | 0.1114 | 0.4569 | 0.6633 | 0.3420 | 2.9236 |
+| tabm | deep_learning | 0.0385 | 0.1092 | 0.4770 | 0.6775 | 0.3530 | 2.8331 |

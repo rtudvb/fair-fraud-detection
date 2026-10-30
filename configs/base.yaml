@@ -1,0 +1,50 @@
+# Shared settings for every experiment. Experiment configs are deep-merged on top of this file.
+seed: 42
+
+paths: # relative to the repository root
+  raw: data/raw
+  processed: data/processed
+  results: results
+  figures: reports/paper/figures
+  tables: reports/paper/tables
+
+dataset:
+  kaggle_slug: sgpjesus/bank-account-fraud-dataset-neurips-2022
+  label: fraud_bool
+  month: month
+  protected: customer_age
+  # key -> file stem on Kaggle (loader tries <stem>.parquet, then <stem>.csv)
+  variants:
+    base: Base
+    variant_1: Variant I
+    variant_2: Variant II
+    variant_3: Variant III
+    variant_4: Variant IV
+    variant_5: Variant V
+
+splits:
+  # Protocol of Jesus et al. (2022): first six months train, last two test.
+  reproduction:
+    train: [0, 1, 2, 3, 4, 5]
+    test: [6, 7]
+  # Our protocol: month 5 is held out for tuning and threshold selection.
+  main:
+    train: [0, 1, 2, 3, 4]
+    valid: [5]
+    test: [6, 7]
+
+evaluation:
+  target_fpr: 0.05 # operating point of the BAF paper
+  bootstrap:
+    n_boot: 1000
+    alpha: 0.05
+
+fairness:
+  age_cutoff: 50
+  inclusive: true # official BAF code uses `customer_age >= 50`; the paper text says `> 50`
+  cutoff_sensitivity: [40, 50, 60]
+  min_fpr_ratio: 0.8
+
+learning_curve:
+  sizes: [1000, 5000, 10000, 50000, 100000, null] # null = full training set
+  repeats_small: 3 # repeated stratified subsamples for sizes <= 10,000

@@ -1,0 +1,36 @@
+# Three-tier decision model (proposal §6.7).
+# Every number below is an ASSUMPTION for a scenario simulation, not data from a real bank.
+# Results are reported with the sensitivity grid at the bottom.
+currency: TWD
+
+tier_costs:
+  # Expected loss when a fraudulent account opens with full functionality.
+  # Proxy: monthly non-designated transfer limit of a type-1 digital account (NT$200,000).
+  loss_full: 200000
+  # Expected loss when it opens as a limited (type-3) account: monthly limit NT$50,000.
+  loss_limited: 50000
+  verify_catch: 0.5 # probability that enhanced verification (video / telecom) stops a fraudster
+  review_catch: 0.9 # probability that manual review stops a fraudster
+  cost_verify: 50 # operating cost per enhanced verification
+  cost_review: 300 # operating cost per manual review
+  cost_friction: 100 # inconvenience cost for a legitimate applicant sent to tier 2
+  cost_attrition: 2000 # expected lost customer value for a legitimate applicant sent to tier 3
+
+constraints:
+  review_capacity_rate: 0.02 # at most 2% of applications may go to manual review (tier 3)
+  # At most 10% may go to enhanced verification (tier 2): video / telecom checks need staff
+  # and slow down onboarding. Without this cap, cheap verification makes "verify everyone"
+  # the cheapest policy and the model irrelevant (see the all_limited reference policy).
+  verify_capacity_rate: 0.10
+  min_fpr_ratio: 0.8 # age fairness of being escalated (tier >= 2) among legitimate applicants
+
+search:
+  # Thresholds are placed at these alert rates (share of applications at or above the threshold).
+  alert_rates: [0.001, 0.002, 0.005, 0.01, 0.02, 0.03, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.5]
+
+sensitivity: # one assumption changes at a time; the others stay at the values above
+  loss_full_multipliers: [0.25, 4.0]
+  verify_catch: [0.3, 0.8]
+  cost_friction: [500, 1000]
+  review_capacity_rate: [0.01, 0.05]
+  verify_capacity_rate: [0.05, 0.2]

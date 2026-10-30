@@ -1,0 +1,12 @@
+# LightGBM random-search space reported in Jesus et al. (2022), Appendix A.2.
+# Used by the reproduction experiment (E1); trial counts live in configs/experiments.yaml.
+space:
+  n_estimators: { type: int, low: 20, high: 10000, log: true }
+  max_depth: { type: int, low: 3, high: 30 }
+  learning_rate: { type: float, low: 0.02, high: 0.1, log: true }
+  num_leaves: { type: int, low: 10, high: 100, log: true }
+  # LightGBM >= 4 expresses GOSS as `data_sample_strategy`; the runner maps "goss" accordingly.
+  boosting_type: { type: categorical, choices: [gbdt, goss] }
+  min_child_samples: { type: int, low: 5, high: 200, log: true } # "minimum instances in leaf"
+  max_bin: { type: int, low: 100, high: 500 }
+  enable_bundle: { type: categorical, choices: [true, false] }

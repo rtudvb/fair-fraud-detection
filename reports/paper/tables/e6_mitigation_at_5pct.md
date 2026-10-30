@@ -1,0 +1,11 @@
+| model | method | target_fpr | tpr | fpr | fpr_younger | fpr_older | fpr_ratio |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| lightgbm | global_threshold | 0.0500 | 0.5507 | 0.0590 | 0.0448 | 0.1323 | 0.3388 |
+| lightgbm | group_thresholds | 0.0500 | 0.5351 | 0.0600 | 0.0589 | 0.0658 | 0.8954 |
+| tabpfn | global_threshold | 0.0500 | 0.5601 | 0.0565 | 0.0427 | 0.1277 | 0.3345 |
+| tabpfn | group_thresholds | 0.0500 | 0.5427 | 0.0566 | 0.0557 | 0.0615 | 0.9057 |
+| lightgbm_same_params | in_processing | 0.0500 | 0.5486 | 0.0549 | 0.0404 | 0.1301 | 0.3102 |
+| fairgbm_tol0.02_mlr0.1 | in_processing | 0.0500 | 0.5257 | 0.0537 | 0.0487 | 0.0792 | 0.6157 |
+| fairgbm_tol0.01_mlr0.1 | in_processing | 0.0500 | 0.5261 | 0.0585 | 0.0559 | 0.0722 | 0.7737 |
+| fairgbm_tol0.005_mlr0.1 | in_processing | 0.0500 | 0.5337 | 0.0575 | 0.0532 | 0.0798 | 0.6665 |
+| fairgbm_tol0.0_mlr0.1 | in_processing | 0.0500 | 0.5330 | 0.0581 | 0.0550 | 0.0739 | 0.7449 |

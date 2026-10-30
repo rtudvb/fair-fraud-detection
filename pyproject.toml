@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "frauddetect"
+version = "0.1.0"
+description = "Fairness- and cost-aware account-opening fraud detection: from gradient boosting to tabular foundation models."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Chang Ren-Yu" }]
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "pyarrow>=15",
+    "scikit-learn>=1.5",
+    "pyyaml>=6",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+# Gradient-boosted trees + hyperparameter search (RQ1, RQ2).
+gbdt = ["lightgbm>=4.3", "xgboost>=2.0", "catboost>=1.2", "optuna>=3.6"]
+# Deep learning trained from scratch: TabM, RealMLP (RQ2).
+dl = ["torch>=2.2", "pytabkit>=1.5"]
+# Pretrained tabular foundation models (RQ2). Weights are downloaded on first use; see docs/compute.md.
+fm = ["torch>=2.2", "tabpfn>=2.5", "tabicl>=2.0"]
+# Explanations (RQ5).
+explain = ["shap>=0.45"]
+# Fairness-constrained boosting (RQ3 in-processing).
+fair = ["fairgbm>=0.9"]
+# Dataset download through the Kaggle API.
+data = ["kaggle>=1.6"]
+# Interactive demo (E11).
+app = ["streamlit>=1.35"]
+# Report rendering (Quarto CLI incl. Typst for PDF; no LaTeX needed; python-docx formats Word).
+report = ["quarto-cli>=1.6", "python-docx>=1.1"]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6", "pre-commit>=3.7"]
+
+[project.scripts]
+frauddetect = "frauddetect.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "NPY", "PD", "SIM", "RUF"]
+ignore = [
+    "RUF001", # allow full-width punctuation in Chinese strings
+    "RUF002",
+    "RUF003",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = ["slow: tests that train real models (deselect with -m 'not slow')"]
+filterwarnings = ["ignore::sklearn.exceptions.ConvergenceWarning"]

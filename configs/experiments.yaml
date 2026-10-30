@@ -1,0 +1,131 @@
+# Settings for every experiment (proposal §7). `python -m frauddetect run <experiment>`.
+# The `quick` block is deep-merged on top when running with --quick (smoke runs, CI).
+
+runtime:
+  device: auto # auto | cpu | cuda:0  (used by TabM, RealMLP, TabPFN, TabICL, FedAvg MLP)
+  n_jobs: -1
+  predict_batch_size: 50000 # score large test sets in chunks (foundation models need this)
+
+synthetic:
+  rows: 40000 # rows per synthetic variant for --synthetic runs (pipeline checks only)
+
+# Rows per model are capped by a stratified subsample of the training months. Foundation
+# models start at 50k on the 8 GB RTX 2080; raise it if memory allows (TabPFN-3.5 accepts 1M).
+max_train_rows:
+  tabpfn: 50000
+  tabicl: 50000
+
+eda:
+  variant: base
+
+reproduction: # E1, Jesus et al. (2022) Figure 1
+  variants: [base, variant_1, variant_2, variant_3, variant_4, variant_5]
+  space_file: configs/models/lightgbm_baf_space.yaml
+  n_trials: { base: 100, variants: 20 } # variants reuse the first 20 configurations of Base
+  max_estimators: null # cap n_estimators (null = paper range up to 10,000)
+  top_k: 5
+
+benchmark: # E2, default-parameter track
+  variant: base
+  models: [logreg, random_forest, xgboost, lightgbm, catboost, mlp, tabm, realmlp, tabpfn, tabicl]
+  seeds: [0] # add seeds (e.g. [0, 1, 2]) to report seed variability
+  n_boot: 1000 # bootstrap replicates for confidence intervals
+
+tuned: # E3, equal tuning budget for every model that has hyperparameters
+  variant: base
+  models: [logreg, random_forest, xgboost, lightgbm, catboost, mlp, tabm, realmlp]
+  space_file: configs/models/tuned_spaces.yaml
+  n_trials: 30
+  hpo_train_rows: # tune deep learning on a subsample, then refit on all training months
+    mlp: 100000
+    tabm: 100000
+    realmlp: 100000
+
+learning_curve: # E4; sizes and repeats come from base.yaml `learning_curve`
+  variant: base
+  models: [logreg, xgboost, lightgbm, catboost, realmlp, tabm, tabpfn, tabicl]
+
+fairness: # E5-E6
+  variant: base
+  mitigation_models: [lightgbm, tabpfn] # post-processing with group thresholds
+  operating_fprs: [0.01, 0.02, 0.03, 0.05, 0.075, 0.1] # trade-off curve (Pareto) points
+  fairgbm: # in-processing (Cruz et al., 2023); the age-group constraint applies during training only
+    params: # shared by FairGBM and its unconstrained LightGBM baseline
+      n_estimators: 500
+      learning_rate: 0.05
+      num_leaves: 63
+    constraint: # FairGBM-specific settings
+      constraint_type: FPR # equal false-positive rates across age groups (predictive equality)
+      # Where the constraint is enforced. FairGBM's default (0.5) flags almost nobody at ~1%
+      # fraud, which makes the constraint vacuous; "auto" uses the unconstrained LightGBM's
+      # training threshold at the target FPR (5%).
+      score_threshold: auto
+    grid: # one model per entry; tolerance = allowed FPR gap between age groups
+      # multiplier_learning_rate above ~0.5 made training diverge (a model that flags nobody).
+      - { constraint_fpr_tolerance: 0.02, multiplier_learning_rate: 0.1 }
+      - { constraint_fpr_tolerance: 0.01, multiplier_learning_rate: 0.1 }
+      - { constraint_fpr_tolerance: 0.005, multiplier_learning_rate: 0.1 }
+      - { constraint_fpr_tolerance: 0.0, multiplier_learning_rate: 0.1 }
+
+decision: # E7
+  variant: base
+  model: lightgbm
+
+explain: # E8
+  variant: base
+  model: lightgbm
+  shap_rows: 5000
+  surrogate_depths: [3, 4]
+
+monitoring: # E9
+  variant: base
+  model: lightgbm
+
+small_bank: # E10 (go / no-go at the 11/15 checkpoint)
+  variant: base
+  bank_shares: [0.40, 0.25, 0.15, 0.12, 0.08]
+  partition_feature: housing_status # customer mix differs between banks (non-IID)
+  dirichlet_alpha: 0.5
+  local_models: [lightgbm, tabpfn]
+  n_boot: 1000 # bootstrap replicates for the per-bank recall intervals
+  fedavg:
+    rounds: 30
+    local_epochs: 1
+    batch_size: 1024
+    lr: 0.001
+    hidden: [128, 64]
+
+app: # E11, aggregated score histograms only (no raw rows leave the machine)
+  variant: base
+  model: lightgbm
+  n_bins: 1000
+
+quick:
+  synthetic:
+    rows: 6000
+  reproduction:
+    variants: [base, variant_2]
+    n_trials: { base: 4, variants: 2 }
+    max_estimators: 100
+  benchmark:
+    n_boot: 50
+  tuned:
+    n_trials: 2
+  learning_curve:
+    models: [logreg, lightgbm]
+  fairness:
+    mitigation_models: [lightgbm]
+    operating_fprs: [0.02, 0.05, 0.1]
+    fairgbm:
+      params: { n_estimators: 50 }
+      grid:
+        - { constraint_fpr_tolerance: 0.01, multiplier_learning_rate: 0.1 }
+  explain:
+    shap_rows: 500
+  small_bank:
+    local_models: [lightgbm]
+    n_boot: 50
+    fedavg:
+      rounds: 3
+  app:
+    n_bins: 100
