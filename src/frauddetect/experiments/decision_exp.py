@@ -10,7 +10,15 @@ best_binary                cheapest two-way policy within the capacities
 three_tier                 cheapest three-tier policy within the capacities
 three_tier_fair            + age-fairness constraint, one threshold pair for everyone
 three_tier_fair_groupwise  + age-fairness constraint, one threshold pair per age group
+*_buffered                 chosen against capacities shrunk by ``capacity_buffer``
+*_quantile                 alert rates chosen on validation; thresholds re-derived from
+                           the test months' own (unlabelled) score distribution
 =========================  ==========================================================
+
+Fixed thresholds drift with the score distribution, so a policy that meets the capacities
+on the validation month can exceed them on the test months. The buffered and quantile
+variants are the two remedies of report §4.4: a safety margin, or thresholds recomputed
+from recent scores (no labels needed), which keeps every tier at its chosen share.
 
 The capacities cap manual review (tier 3) and enhanced verification (tier 2). Without the
 second cap, cheap verification makes "verify everyone" optimal and the model irrelevant;
@@ -36,6 +44,7 @@ from frauddetect.decision.three_tier import (
     evaluate_policy,
     group_normalized_scores,
     search_policies,
+    threshold_for_alert_rate,
 )
 from frauddetect.evaluation.fairness import age_groups
 from frauddetect.evaluation.metrics import threshold_at_fpr
@@ -51,20 +60,40 @@ POLICY_LABELS = {
     "all_limited": "不用模型（全部限額＋加強驗證）",
     "baf_binary_5pct": "二元：5% 誤判率門檻轉人工",
     "best_binary": "二元：成本最佳門檻",
+    "best_binary_quantile": "二元：成本最佳門檻（分位數門檻）",
     "three_tier": "三級分流",
+    "three_tier_buffered": "三級分流（預留緩衝）",
+    "three_tier_quantile": "三級分流（分位數門檻）",
     "three_tier_fair": "三級分流＋公平限制（單一門檻）",
     "three_tier_fair_groupwise": "三級分流＋公平限制（分組門檻）",
+    "three_tier_fair_groupwise_quantile": "三級分流＋公平限制（分組門檻、分位數門檻）",
 }
 
 
-def _best(table: pd.DataFrame, *, binary: bool | None = None) -> tuple[float, float] | None:
+def _best_row(table: pd.DataFrame, *, binary: bool | None = None) -> pd.Series | None:
     candidates = table.loc[table["feasible"]]
     if binary is not None:
         candidates = candidates.loc[candidates["binary"] == binary]
     if candidates.empty:
         return None
-    row = candidates.sort_values("total_cost").iloc[0]
-    return float(row["t1"]), float(row["t2"])
+    return candidates.sort_values("total_cost").iloc[0]
+
+
+def _best(table: pd.DataFrame, *, binary: bool | None = None) -> tuple[float, float] | None:
+    row = _best_row(table, binary=binary)
+    return None if row is None else (float(row["t1"]), float(row["t2"]))
+
+
+def _quantile(
+    table: pd.DataFrame, scores: np.ndarray, *, binary: bool | None = None
+) -> tuple[float, float] | None:
+    """The chosen policy's alert rates, turned into thresholds on ``scores`` (no labels)."""
+    row = _best_row(table, binary=binary)
+    if row is None:
+        return None
+    t1 = threshold_for_alert_rate(scores, float(row["escalate_alert_rate"]))
+    t2 = threshold_for_alert_rate(scores, float(row["review_alert_rate"]))
+    return t1, max(t1, t2)
 
 
 def choose_and_evaluate(
@@ -98,6 +127,18 @@ def choose_and_evaluate(
     fair_groupwise = search_policies(
         valid["y"], z_valid, costs, groups=valid["groups"], min_fpr_ratio=min_ratio, **common
     )
+    buffer = constraints.get("capacity_buffer")
+    buffered = None
+    if buffer:
+        buffered = search_policies(
+            valid["y"],
+            valid["score"],
+            costs,
+            groups=valid["groups"],
+            alert_rates=rates,
+            review_capacity_rate=None if capacity is None else capacity * buffer,
+            verify_capacity_rate=None if verify_capacity is None else verify_capacity * buffer,
+        )
 
     t_baf = threshold_at_fpr(valid["y"], valid["score"], target_fpr)
     plans = {
@@ -105,9 +146,13 @@ def choose_and_evaluate(
         "all_limited": ((-np.inf, np.inf), test["score"]),
         "baf_binary_5pct": ((t_baf, t_baf), test["score"]),
         "best_binary": (_best(search, binary=True), test["score"]),
+        "best_binary_quantile": (_quantile(search, test["score"], binary=True), test["score"]),
         "three_tier": (_best(search), test["score"]),
+        "three_tier_buffered": (None if buffered is None else _best(buffered), test["score"]),
+        "three_tier_quantile": (_quantile(search, test["score"]), test["score"]),
         "three_tier_fair": (_best(fair), test["score"]),
         "three_tier_fair_groupwise": (_best(fair_groupwise), z_test),
+        "three_tier_fair_groupwise_quantile": (_quantile(fair_groupwise, z_test), z_test),
     }
     rows = []
     for name, (thresholds, scores) in plans.items():
@@ -123,8 +168,9 @@ def choose_and_evaluate(
         rows.append(row)
     results = pd.DataFrame(rows)
     baseline = results.set_index("policy")["total_cost"]
-    for ref in ("no_model", "baf_binary_5pct"):
-        results[f"saving_vs_{ref}"] = 1 - results["total_cost"] / baseline[ref]
+    for ref in ("no_model", "baf_binary_5pct", "best_binary_quantile"):
+        if ref in baseline.index:
+            results[f"saving_vs_{ref}"] = 1 - results["total_cost"] / baseline[ref]
     return search, results
 
 
@@ -170,59 +216,90 @@ def report_table(results: pd.DataFrame) -> pd.DataFrame:
         "fraud_tier1",
         "fraud_tier2",
         "fraud_tier3",
+        "fraud_caught",
+        "fraud_open_full",
+        "fraud_open_limited",
         "cost_per_application",
         "saving_vs_no_model",
         "saving_vs_baf_binary_5pct",
+        "saving_vs_best_binary_quantile",
         "escalation_fpr_ratio",
+        "escalation_rate_younger",
+        "escalation_rate_older",
+        "review_rate_younger",
+        "review_rate_older",
         "meets_capacity",
         "meets_fairness",
     ]
-    out = results[cols].copy()
+    out = results[[c for c in cols if c in results.columns]].copy()
     out["policy"] = out["policy"].map(POLICY_LABELS)
     return out
 
 
+SENSITIVITY_POLICIES = (
+    "all_limited",
+    "best_binary",
+    "best_binary_quantile",
+    "three_tier",
+    "three_tier_quantile",
+    "three_tier_fair_groupwise",
+    "three_tier_fair_groupwise_quantile",
+)
+SINGLE_PARAMETERS = (  # config key under ``sensitivity`` -> (label, TierCosts field)
+    ("verify_catch", "加強驗證攔截率", "verify_catch"),
+    ("review_catch", "人工審核攔截率", "review_catch"),
+    ("cost_verify", "每件加強驗證成本", "cost_verify"),
+    ("cost_review", "每件人工審核成本", "cost_review"),
+    ("cost_friction", "好客戶被加強驗證的不便成本", "cost_friction"),
+    ("cost_attrition", "好客戶被轉人工的流失成本", "cost_attrition"),
+)
+
+
 def sensitivity_grid(ctx, costs, costs_cfg, constraints, rates, valid, test) -> pd.DataFrame:
-    """Savings over the BAF binary policy when one assumption changes at a time."""
+    """Savings over the BAF binary policy when one assumption changes at a time.
+
+    Also reports the saving of the capacity-safe three-tier policy (quantile thresholds)
+    over the capacity-safe binary policy, the comparison behind hypothesis H4, and runs the
+    joint optimistic / pessimistic scenarios of ``costs.yaml``.
+    """
     grid = costs_cfg.get("sensitivity", {})
     scenarios = [("基準", np.nan, costs, constraints)]
-    for m in grid.get("loss_full_multipliers", []):
+    for m in grid.get("loss_full_multipliers", []):  # both losses scale together
         scaled = replace(costs, loss_full=costs.loss_full * m, loss_limited=costs.loss_limited * m)
         scenarios.append(("詐騙損失倍數", m, scaled, constraints))
-    for v in grid.get("verify_catch", []):
-        scenarios.append(("加強驗證攔截率", v, replace(costs, verify_catch=v), constraints))
-    for c in grid.get("cost_friction", []):
-        scenarios.append(
-            ("好客戶被加強驗證的不便成本", c, replace(costs, cost_friction=c), constraints)
-        )
+    for m in grid.get("loss_limited_multipliers", []):  # only the limited-account loss moves
+        scaled = replace(costs, loss_limited=costs.loss_limited * m)
+        scenarios.append(("限額帳戶損失倍數", m, scaled, constraints))
+    for key, label, field_name in SINGLE_PARAMETERS:
+        for v in grid.get(key, []):
+            scenarios.append((label, v, replace(costs, **{field_name: v}), constraints))
     for key, label in (
         ("review_capacity_rate", "人工審核上限"),
         ("verify_capacity_rate", "加強驗證上限"),
     ):
         for k in grid.get(key, []):
             scenarios.append((label, k, costs, {**constraints, key: k}))
+    for name, changes in grid.get("scenarios", {}).items():
+        scenarios.append((name, np.nan, replace(costs, **changes), constraints))
 
     rows = []
     for parameter, value, scenario, limits in scenarios:
         _, results = choose_and_evaluate(valid, test, scenario, limits, rates, ctx.target_fpr)
         by_policy = results.set_index("policy")
         saving = by_policy["saving_vs_baf_binary_5pct"]
-        rows.append(
-            {
-                "parameter": parameter,
-                "value": value,
-                **{
-                    f"saving_{p}": saving.get(p, np.nan)
-                    for p in (
-                        "all_limited",
-                        "best_binary",
-                        "three_tier",
-                        "three_tier_fair_groupwise",
-                    )
-                },
-                "three_tier_tier2_rate": by_policy["tier2_rate"].get("three_tier", np.nan),
-            }
-        )
+        row = {
+            "parameter": parameter,
+            "value": value,
+            **{f"saving_{p}": saving.get(p, np.nan) for p in SENSITIVITY_POLICIES},
+            "three_tier_tier2_rate": by_policy["tier2_rate"].get("three_tier", np.nan),
+        }
+        if "saving_vs_best_binary_quantile" in by_policy:
+            row["quantile_three_tier_vs_binary"] = by_policy["saving_vs_best_binary_quantile"].get(
+                "three_tier_quantile", np.nan
+            )
+        for p in ("three_tier_quantile", "three_tier_fair_groupwise_quantile"):
+            row[f"meets_capacity_{p}"] = by_policy["meets_capacity"].get(p, np.nan)
+        rows.append(row)
     return pd.DataFrame(rows)
 
 

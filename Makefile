@@ -3,7 +3,7 @@ PYTHON ?= python
 PAPER_DIR := reports/paper
 RUN := $(PYTHON) -m frauddetect run
 
-.PHONY: help install install-all lint format test test-all data validate models smoke \
+.PHONY: review-reruns help install install-all lint format test test-all data validate models smoke \
         eda reproduce benchmark tuned learning-curve fairness decision explain monitor \
         small-bank app-data experiments pipeline-check app fonts report clean all
 
@@ -79,6 +79,14 @@ app-data: ## E11 Export aggregated histogram for the demo
 
 experiments: ## Run E0-E11 in order (long; use tmux)
 	$(RUN) all
+
+review-reruns: ## Re-run the experiments changed after the 11/24 reviews (resumable)
+	$(RUN) reproduce
+	$(RUN) tuned
+	$(RUN) learning-curve
+	$(RUN) fairness
+	$(RUN) decision
+	$(RUN) small-bank
 
 pipeline-check: ## Run every experiment on synthetic data in quick mode (minutes, no real data)
 	$(RUN) all --synthetic --quick

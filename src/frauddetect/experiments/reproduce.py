@@ -31,7 +31,26 @@ from frauddetect.viz.style import BLUE, GRID, INK_MUTED, ORANGE
 
 log = logging.getLogger(__name__)
 
-PAPER_TOP_FPR_RATIO = 0.3  # "top performing models lying around 0.3 FPR ratio" (Base)
+# Jesus et al. (2022) report no table, only Figure 1. These ranges were read by eye from the
+# opaque points of that figure (the top 5 Base configurations, evaluated on every variant):
+# (recall low, recall high, FPR ratio low, FPR ratio high). The text adds that the top Base
+# models lie "around 0.3 FPR ratio".
+PAPER_FIGURE1 = {
+    "base": (0.55, 0.56, 0.32, 0.33),
+    "variant_1": (0.52, 0.53, 0.64, 0.71),
+    "variant_2": (0.545, 0.56, 0.31, 0.32),
+    "variant_3": (0.755, 0.76, 0.35, 0.37),
+    "variant_4": (0.425, 0.44, 0.325, 0.33),
+    "variant_5": (0.34, 0.375, 0.365, 0.385),
+}
+VARIANT_NAMES = {
+    "base": "Base",
+    "variant_1": "Variant I",
+    "variant_2": "Variant II",
+    "variant_3": "Variant III",
+    "variant_4": "Variant IV",
+    "variant_5": "Variant V",
+}
 
 
 def trial_configs(space: dict, n: int, seed: int) -> list[tuple[int, dict]]:
@@ -74,9 +93,20 @@ def run_trials(ctx: ExperimentContext) -> pd.DataFrame:
     done = pd.read_csv(log_path) if log_path.exists() else pd.DataFrame()
     finished = set(zip(done.get("variant", []), done.get("trial", []), strict=False))
 
+    top_k = int(section.get("top_k", 5))
     for variant in section["variants"]:
         count = n_trials["base"] if variant == "base" else n_trials["variants"]
-        todo = [t for t in range(count) if (variant, t) not in finished]
+        wanted = list(range(count))
+        if variant != "base" and section.get("variants_include_base_top_k", True):
+            # The top-k Base configurations must also run on every variant, otherwise the
+            # "top-k" comparison with the paper's Figure 1 rests on whichever of them happen
+            # to fall among the first configurations (only one did in the first run).
+            log_now = pd.read_csv(log_path) if log_path.exists() else pd.DataFrame()
+            base = log_now.loc[log_now.get("variant", pd.Series(dtype=str)) == "base"]
+            if len(base) >= n_trials["base"]:
+                top = base.nlargest(top_k, "recall")["trial"].astype(int).tolist()
+                wanted += [t for t in top if t not in wanted]
+        todo = [t for t in wanted if (variant, t) not in finished]
         if not todo:
             continue
         split = split_from_config(ctx.load(variant, cache=False), ctx.config, "reproduction")
@@ -131,6 +161,7 @@ def summarise(trials: pd.DataFrame, top_k: int, cutoff: int) -> pd.DataFrame:
                 "trials": len(part),
                 "recall_median": part["recall"].median(),
                 "recall_max": part["recall"].max(),
+                "top_k_trials": len(top_part),
                 "top_k_recall": top_part["recall"].mean(),
                 f"top_k_fpr_ratio_ge{cutoff}": top_part[f"fpr_ratio_ge{cutoff}"].mean(),
                 f"top_k_fpr_ratio_gt{cutoff}": top_part[f"fpr_ratio_gt{cutoff}"].mean(),
@@ -140,27 +171,29 @@ def summarise(trials: pd.DataFrame, top_k: int, cutoff: int) -> pd.DataFrame:
 
 
 def comparison_with_paper(summary: pd.DataFrame, cutoff: int) -> pd.DataFrame:
-    base = summary.loc[summary["variant"] == "base"].iloc[0]
-    ours = base[f"top_k_fpr_ratio_ge{cutoff}"]
-    return pd.DataFrame(
-        [
+    """Top-5 recall and FPR ratio next to the ranges read from Figure 1 of the paper.
+
+    The FPR ratio is given for both groupings, so the table shows which one the published
+    figure agrees with.
+    """
+
+    def span(low: float, high: float) -> str:
+        return f"{low:.2f}" if round(low, 2) == round(high, 2) else f"{low:.2f}–{high:.2f}"
+
+    rows = []
+    for _, row in summary.iterrows():
+        paper = PAPER_FIGURE1.get(row["variant"])
+        rows.append(
             {
-                "item": "Base 最佳模型的 FPR 比（年齡 ≥ 50）",
-                "paper": f"約 {PAPER_TOP_FPR_RATIO}",
-                "ours": f"{ours:.3f}",
-            },
-            {
-                "item": "年長者正常申請被誤判的倍數（1 / FPR 比）",
-                "paper": f"> {1 / PAPER_TOP_FPR_RATIO:.1f} 倍",
-                "ours": f"{1 / ours:.1f} 倍" if ours > 0 else "—",
-            },
-            {
-                "item": "改用論文正文分組（年齡 > 50）的 FPR 比",
-                "paper": "（未報告）",
-                "ours": f"{base[f'top_k_fpr_ratio_gt{cutoff}']:.3f}",
-            },
-        ]
-    )
+                "variant": VARIANT_NAMES.get(row["variant"], row["variant"]),
+                "paper_recall": span(*paper[:2]) if paper else "—",
+                "ours_recall": f"{row['top_k_recall']:.3f}",
+                "paper_fpr_ratio": span(*paper[2:]) if paper else "—",
+                f"ours_fpr_ratio_ge{cutoff}": f"{row[f'top_k_fpr_ratio_ge{cutoff}']:.3f}",
+                f"ours_fpr_ratio_gt{cutoff}": f"{row[f'top_k_fpr_ratio_gt{cutoff}']:.3f}",
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def plot_figure1(trials: pd.DataFrame, top_k: int, cutoff: int):

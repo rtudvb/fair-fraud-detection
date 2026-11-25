@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 from docx import Document
@@ -186,6 +187,21 @@ def apply_styles(doc) -> None:
     set_style(doc, "Bibliography", size=12, hanging=480, align="left")
     # The repository link under the title, in red so it stands out.
     set_style(doc, "RepoLink", size=12, bold=True, align="center", before=240, color=CITATION_COLOR)
+    # The simulator page after the abstract: title, screenshot and a short note.
+    set_style(
+        doc,
+        "ShowcaseTitle",
+        size=16,
+        bold=True,
+        align="center",
+        after=360,
+        page_break=True,
+        keep_next=True,
+    )
+    set_style(doc, "ShowcaseImage", size=12, align="center", line=240, keep_next=True)
+    # 「註：」 under a table: smaller, flush left, close to the table (APA-style table note).
+    set_style(doc, "TableNote", size=10.5, align="both", line=300, after=120)
+    set_style(doc, "ShowcaseNote", size=12, align="both", before=240, first_line_chars=200)
 
     # Citations (marked by citations.lua) in the drafting colour.
     citation = find_style(doc, "Citation")
@@ -303,7 +319,167 @@ def set_text(container, text: str) -> None:
     t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
 
 
-def number_headings_and_captions(doc) -> None:
+def text_run(text: str):
+    run, t = element("w:r"), element("w:t")
+    t.text = text
+    t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+    run.append(t)
+    return run
+
+
+def tab_run():
+    run = element("w:r")
+    run.append(element("w:tab"))
+    return run
+
+
+CHINESE_NUMERALS = "一二三四五六七八九十"
+
+
+class References:
+    """Word bookmarks on headings, captions and equation numbers, and the REF fields to them."""
+
+    def __init__(self) -> None:
+        self.targets: dict[str, tuple[str, str, str]] = {}  # anchor -> (bookmark, text, switches)
+        self.next_id = 90000
+
+    def mark(self, anchor: str, first, last, text: str, switches: str = "\\h") -> None:
+        """Bookmark the runs ``first``..``last`` and register them as the target of ``anchor``."""
+        self.next_id += 1
+        name = f"_Ref{self.next_id}"
+        first.addprevious(element("w:bookmarkStart", id=str(self.next_id), name=name))
+        last.addnext(element("w:bookmarkEnd", id=str(self.next_id)))
+        self.targets[anchor] = (name, text, switches)
+
+
+def field_runs(instruction: str, text: str, rpr=None) -> list:
+    """The runs of a complex field: begin, instruction, separate, cached result, end."""
+
+    def run(child):
+        r = element("w:r")
+        if rpr is not None:
+            r.append(deepcopy(rpr))
+        r.append(child)
+        return r
+
+    instr = element("w:instrText")
+    instr.text = f" {instruction} "
+    instr.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+    result = text_run(text)
+    if rpr is not None:
+        result.insert(0, deepcopy(rpr))
+    return [
+        run(element("w:fldChar", fldCharType="begin")),
+        run(instr),
+        run(element("w:fldChar", fldCharType="separate")),
+        result,
+        run(element("w:fldChar", fldCharType="end")),
+    ]
+
+
+def cross_references(doc, refs: References) -> None:
+    """Replace links to headings, figures, tables and equations with Word REF fields.
+
+    Word shows them as ordinary cross-references: Ctrl+click jumps to the target and F9
+    refreshes the number after the document changes.
+    """
+    for link in list(doc.element.body.iter(qn("w:hyperlink"))):
+        anchor = link.get(qn("w:anchor")) or ""
+        if anchor not in refs.targets:
+            continue
+        name, text, switches = refs.targets[anchor]
+        first = link.find(qn("w:r"))
+        rpr = deepcopy(first.find(qn("w:rPr"))) if first is not None else None
+        if rpr is not None:
+            for style in rpr.findall(qn("w:rStyle")):
+                rpr.remove(style)
+        runs = field_runs(f"REF {name} {switches}", text, rpr)
+        if anchor.startswith("eq-"):
+            prefix = text_run("式")
+            if rpr is not None:
+                prefix.insert(0, deepcopy(rpr))
+            runs.insert(0, prefix)
+        for r in runs:
+            link.addprevious(r)
+        link.getparent().remove(link)
+
+
+def number_equations(doc, refs: References) -> None:
+    """Centre each numbered display equation and put its number, (1), at the right margin.
+
+    Quarto writes the number inside the equation itself; it is moved into a text run after a
+    right tab stop, the usual layout of equations in theses.
+    """
+    width = 9072  # text width in twips: A4 (21 cm) minus two 2.5 cm margins
+    for p in doc.element.body.iter(qn("w:p")):
+        mark = p.find(qn("w:bookmarkStart"))
+        para = p.find(qn("m:oMathPara"))
+        if mark is None or para is None or not mark.get(qn("w:name"), "").startswith("eq-"):
+            continue
+        math = para.find(qn("m:oMath"))
+        runs = math.findall(qn("m:r"))
+        texts = ["".join(t.text or "" for t in r.iter(qn("m:t"))) for r in runs]
+        if ")" not in texts or "(" not in texts:
+            continue
+        start = len(texts) - 1 - texts[::-1].index("(")
+        number = "".join(texts[start + 1 : -1])
+        for run in runs[start:]:
+            math.remove(run)
+        if start > 0 and not texts[start - 1].strip():
+            math.remove(runs[start - 1])
+        position = list(p).index(para)
+        p.remove(para)
+        label = text_run(f"({number})")
+        for offset, child in enumerate((tab_run(), math, tab_run(), label)):
+            p.insert(position + offset, child)
+        refs.mark(mark.get(qn("w:name")), label, label, f"({number})")
+        ppr = paragraph_props(p)
+        tabs = element("w:tabs")
+        tabs.append(element("w:tab", val="center", pos=str(width // 2)))
+        tabs.append(element("w:tab", val="right", pos=str(width)))
+        put(ppr, tabs)
+        put(ppr, element("w:spacing", before="120", after="120", line="360", lineRule="auto"))
+        put(ppr, element("w:ind", left="0", firstLine="0", firstLineChars="0"))
+        put(ppr, element("w:jc", val="left"))
+
+
+def tidy_references(doc) -> None:
+    """Drop the spaces pandoc leaves around 圖、表、式 and section references in CJK text."""
+    for link in doc.element.body.iter(qn("w:hyperlink")):
+        anchor = link.get(qn("w:anchor")) or ""
+        if not anchor.startswith(("fig-", "tbl-", "eq-", "sec-")):
+            continue
+        for side in ("previous", "next"):
+            run = link.getprevious() if side == "previous" else link.getnext()
+            if run is None or local(run) != "r":
+                continue
+            t = run.find(qn("w:t"))
+            if t is None or not t.text:
+                continue
+            neighbour = run.getprevious() if side == "previous" else run.getnext()
+            beyond = paragraph_text(neighbour) if neighbour is not None else ""
+            if side == "previous":
+                text, other = (
+                    t.text,
+                    (beyond[-1:] if t.text.strip() == "" else t.text.rstrip()[-1:]),
+                )
+            else:
+                text, other = t.text, (beyond[:1] if t.text.strip() == "" else t.text.lstrip()[:1])
+            label = paragraph_text(link)
+            edge = label[:1] if side == "previous" else label[-1:]
+            if anchor.startswith("eq-"):
+                edge = "式" if side == "previous" else ")"  # shown as 式(n)
+            # Drop the space between two CJK characters (如 圖 → 如圖) or next to full-width
+            # punctuation (（ 4.5 → （4.5); keep it between a number and a CJK word (圖 3-1 所示).
+            if (
+                other
+                and not other.isascii()
+                and (not edge.isascii() or edge == ")" or not other.isalnum())
+            ):
+                t.text = text.rstrip(" ") if side == "previous" else text.lstrip(" ")
+
+
+def number_headings_and_captions(doc, refs: References) -> None:
     """Switch numbering off for unnumbered headings; number captions and references per chapter.
 
     Captions in 附錄 A are numbered 表 A-1, 圖 A-1, and so on.
@@ -312,14 +488,42 @@ def number_headings_and_captions(doc) -> None:
     chapters, chapter, unnumbered = 0, "", False
     counters: dict[tuple[str, str], int] = {}
     labels: dict[tuple[str, str], str] = {}
-    for p in body.iter(qn("w:p")):
+    sections = [0, 0]  # level-2 and level-3 counters within the chapter
+    float_id = ""  # Quarto puts the fig-/tbl- bookmark just before the float and its caption
+    section_id = ""  # and a heading's bookmark just before the heading
+    for p in body.iter(qn("w:p"), qn("w:bookmarkStart")):
+        if local(p) == "bookmarkStart":
+            name = p.get(qn("w:name")) or ""
+            if name.startswith(("fig-", "tbl-")):
+                float_id = name
+            elif name.startswith("sec-"):
+                section_id = name
+            continue
         style = paragraph_style(p) or ""
         if re.fullmatch(r"Heading\d", style):
             text = paragraph_text(p)
+            level = int(style[-1])
             if style == "Heading1":
                 unnumbered = text in UNNUMBERED_CHAPTERS
                 chapters += 0 if unnumbered else 1
                 chapter = "" if unnumbered else str(chapters)
+                sections = [0, 0]
+            elif not unnumbered and level in (2, 3):
+                if level == 2:
+                    sections = [sections[0] + 1, 0]
+                else:
+                    sections[1] += 1
+            mark = p.find(qn("w:bookmarkStart"))
+            anchor = mark.get(qn("w:name")) if mark is not None else section_id
+            section_id = ""
+            runs = p.findall(qn("w:r"))
+            if not unnumbered and anchor and runs:
+                number = (
+                    f"第{CHINESE_NUMERALS[chapters - 1]}章"
+                    if level == 1
+                    else ".".join(str(n) for n in [chapters, *sections][:level])
+                )
+                refs.mark(anchor, runs[0], runs[-1], number, "\\w \\h")
             elif unnumbered and (appendix := re.match(r"附錄\s*([A-Z])", text)):
                 chapter = appendix.group(1)
             if unnumbered:
@@ -339,7 +543,14 @@ def number_headings_and_captions(doc) -> None:
         for child in list(ppr):
             ppr.remove(child)
         put(ppr, element("w:pStyle", val="TableCaption" if kind == "表" else "ImageCaption"))
-        set_text(p, f"{label}　{title}")
+        set_text(p, label)
+        label_run = p.find(qn("w:r"))
+        title_run = deepcopy(label_run)
+        title_run.find(qn("w:t")).text = f"　{title}"
+        label_run.addnext(title_run)
+        if float_id:
+            refs.mark(float_id, label_run, label_run, label)
+            float_id = ""
 
     for link in body.iter(qn("w:hyperlink")):
         anchor = link.get(qn("w:anchor")) or ""
@@ -348,11 +559,114 @@ def number_headings_and_captions(doc) -> None:
             set_text(link, labels[match.groups()])
 
 
-def format_tables(doc) -> None:
+GROUP = "｜"  # a header cell written as 「組名｜子欄名」 sits under a spanning group title
+
+
+def cell_text(cell) -> str:
+    return "".join(t.text or "" for t in cell.iter(qn("w:t"))).strip()
+
+
+def header_rows(rows) -> int:
+    return sum(1 for r in rows if r.find(f"{qn('w:trPr')}/{qn('w:tblHeader')}") is not None)
+
+
+def grid_columns(row) -> list[tuple[int, object]]:
+    """(first grid column, cell) for each cell of a row, following gridSpan."""
+    result, column = [], 0
+    for cell in row.findall(qn("w:tc")):
+        result.append((column, cell))
+        span = cell.find(f"{qn('w:tcPr')}/{qn('w:gridSpan')}")
+        column += int(span.get(qn("w:val"))) if span is not None else 1
+    return result
+
+
+def split_group_headers(doc) -> set:
+    """Turn header cells 「組名｜子欄名」 into a two-row header with spanning group titles.
+
+    The first row holds the group titles, merged across their columns, and the other
+    column titles, merged down both rows; the second row holds the sub-titles. This is
+    the grouped header of APA-style tables. Returns the group-title cells.
+    """
+    titles = set()
+    for tbl in doc.element.body.iter(qn("w:tbl")):
+        rows = tbl.findall(qn("w:tr"))
+        if not rows or header_rows(rows) != 1:
+            continue
+        top = rows[0]
+        cells = top.findall(qn("w:tc"))
+        labels = [cell_text(c) for c in cells]
+        if not any(GROUP in label for label in labels):
+            continue
+        sub = deepcopy(top)
+        top.addnext(sub)
+        for cell, label in zip(sub.findall(qn("w:tc")), labels, strict=True):
+            if GROUP in label:
+                set_text(cell.find(qn("w:p")), label.split(GROUP, 1)[1])
+            else:
+                put(get_or_add(cell, "w:tcPr", position=0), element("w:vMerge"))
+                for p in cell.findall(qn("w:p")):
+                    for run in p.findall(qn("w:r")):
+                        p.remove(run)
+        groups = [label.split(GROUP, 1)[0] if GROUP in label else None for label in labels]
+        j = 0
+        while j < len(cells):
+            cell, group = cells[j], groups[j]
+            tcpr = get_or_add(cell, "w:tcPr", position=0)
+            if group is None:
+                put(tcpr, element("w:vMerge", val="restart"))
+                j += 1
+                continue
+            span = 1
+            while j + span < len(cells) and groups[j + span] == group:
+                top.remove(cells[j + span])
+                span += 1
+            if span > 1:
+                put(tcpr, element("w:gridSpan", val=str(span)))
+                for width in tcpr.findall(qn("w:tcW")):
+                    tcpr.remove(width)
+            set_text(cell.find(qn("w:p")), group)
+            titles.add(cell)
+            j += span
+    return titles
+
+
+NUMERIC = re.compile(
+    r"[\d.,%+\-−–~×≥≤<>()（）、；/*⁻⁰¹²³⁴⁵⁶⁷⁸⁹\s元秒倍件筆萬億約個百分點]*\d[\d.,%+\-−–~×≥≤<>()（）、；/*⁻⁰¹²³⁴⁵⁶⁷⁸⁹\s元秒倍件筆萬億約個百分點]*"
+)
+SYMBOLS = re.compile(r"[✓✗—\s]*")
+
+
+def column_alignment(rows, skip: int = 1) -> list[str]:
+    """Numbers right, text left, check marks centred, decided per column from the body rows."""
+    columns: dict[int, list[str]] = {}
+    for row in rows[skip:]:
+        for j, cell in enumerate(row.findall(qn("w:tc"))):
+            text = cell_text(cell)
+            if text and text not in {"—", "－"}:
+                columns.setdefault(j, []).append(text)
+    width = max((len(r.findall(qn("w:tc"))) for r in rows[skip:]), default=0)
+    result = []
+    for j in range(width):
+        texts = columns.get(j, [])
+        if texts and all(SYMBOLS.fullmatch(t) for t in texts):
+            result.append("center")
+        elif texts and sum(bool(NUMERIC.fullmatch(t)) for t in texts) >= 0.6 * len(texts):
+            result.append("right")
+        else:
+            result.append("left")
+    return result
+
+
+def thin_rule(side: str, space: str = "0"):
+    return element(f"w:{side}", val="single", sz="6", space=space, color="000000")
+
+
+def format_tables(doc, group_titles=frozenset()) -> None:
     """Three-line tables (三線表) for data tables; no borders on the layout tables around floats."""
     for tbl in doc.element.body.iter(qn("w:tbl")):
         rows = tbl.findall(qn("w:tr"))
-        is_data = bool(rows) and rows[0].find(f"{qn('w:trPr')}/{qn('w:tblHeader')}") is not None
+        n_header = header_rows(rows)
+        is_data = n_header > 0
         borders = element("w:tblBorders")
         for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
             rule = is_data and side in ("top", "bottom")
@@ -365,7 +679,11 @@ def format_tables(doc) -> None:
         following = tbl.getnext()  # leave a gap between a float and the text after it
         at_top = tbl.getparent() is doc.element.body
         if at_top and following is not None and local(following) == "p":
-            put(paragraph_props(following), element("w:spacing", before="240"))
+            if paragraph_style(following) == "TableNote":  # a note sits close under its table
+                put(paragraph_props(following), element("w:spacing", before="80"))
+                following = following.getnext()
+            if following is not None and local(following) == "p":
+                put(paragraph_props(following), element("w:spacing", before="240"))
 
         for p in tbl.iter(qn("w:p")):  # keep a figure on the same page as its caption
             if p.find(f".//{qn('w:drawing')}") is not None:
@@ -376,22 +694,37 @@ def format_tables(doc) -> None:
         for side in ("left", "right"):
             margins.append(element(f"w:{side}", w="57", type="dxa"))
         put(tbl.find(qn("w:tblPr")), margins)
+        align = column_alignment(rows, skip=n_header)
         for i, row in enumerate(rows):
-            for cell in row.findall(qn("w:tc")):
-                if i == 0:
+            header = i < n_header
+            for j, cell in grid_columns(row):
+                title = cell in group_titles
+                tcpr = get_or_add(cell, "w:tcPr", position=0)
+                if header:  # the table style's first-row border would double the group rule
                     tc_borders = element("w:tcBorders")
-                    tc_borders.append(
-                        element("w:bottom", val="single", sz="6", space="0", color="000000")
-                    )
-                    put(get_or_add(cell, "w:tcPr", position=0), tc_borders)
+                    if i == n_header - 1:
+                        tc_borders.append(thin_rule("bottom"))
+                    else:
+                        tc_borders.append(element("w:bottom", val="nil"))
+                    put(tcpr, tc_borders)
+                if header and n_header > 1:
+                    put(tcpr, element("w:vAlign", val="bottom"))
                 for p in cell.findall(qn("w:p")):
+                    ppr = paragraph_props(p)
+                    if title:  # a short rule under the group title, inset by the cell padding
+                        rule = element("w:pBdr")
+                        rule.append(thin_rule("bottom", space="1"))
+                        put(ppr, rule)
                     put(
-                        paragraph_props(p),
+                        ppr,
                         element("w:spacing", before="40", after="40", line="276", lineRule="auto"),
                     )
+                    put(ppr, element("w:ind", left="0", firstLine="0", firstLineChars="0"))
+                    jc = "center" if title else (align[j] if j < len(align) else "left")
+                    put(ppr, element("w:jc", val=jc))
                     for run in p.iter(qn("w:r")):
                         rpr = run_props(run)
-                        if i == 0:
+                        if header:
                             put(rpr, element("w:b"))
                         put(rpr, element("w:sz", val="22"))
                         put(rpr, element("w:szCs", val="22"))
@@ -413,11 +746,15 @@ def page_setup(doc) -> None:
 
 def postprocess(path: Path) -> None:
     doc = Document(str(path))
+    refs = References()
     apply_styles(doc)
     color_repo_link(doc)
     add_heading_numbering(doc)
-    number_headings_and_captions(doc)
-    format_tables(doc)
+    number_headings_and_captions(doc, refs)
+    format_tables(doc, split_group_headers(doc))
+    number_equations(doc, refs)
+    tidy_references(doc)
+    cross_references(doc, refs)
     page_setup(doc)
     doc.save(str(path))
     print(f"postprocess_docx: formatted {path}")

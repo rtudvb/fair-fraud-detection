@@ -95,6 +95,10 @@ def _policy_row(counter: _Counter, t1: float, t2: float, costs: TierCosts) -> di
         name: counter.ge(arr, t1) / arr.size if arr.size else np.nan
         for name, arr in counter.legit_by_group.items()
     }
+    review_by_group = {  # legitimate applicants sent to manual review, per group
+        name: counter.ge(arr, t2) / arr.size if arr.size else np.nan
+        for name, arr in counter.legit_by_group.items()
+    }
     values = np.array([v for v in escalation.values() if not np.isnan(v)])
     if values.size == 0:
         fairness = np.nan
@@ -111,6 +115,10 @@ def _policy_row(counter: _Counter, t1: float, t2: float, costs: TierCosts) -> di
         "fraud_tier1": fraud[1],
         "fraud_tier2": fraud[2],
         "fraud_tier3": fraud[3],
+        # expected frauds stopped, and frauds that still open a full / limited account
+        "fraud_caught": fraud[2] * costs.verify_catch + fraud[3] * costs.review_catch,
+        "fraud_open_full": fraud[1] + fraud[3] * (1 - costs.review_catch),
+        "fraud_open_limited": fraud[2] * (1 - costs.verify_catch),
         "legit_tier2": legit[2],
         "legit_tier3": legit[3],
         "fraud_loss": fraud_loss,
@@ -121,6 +129,7 @@ def _policy_row(counter: _Counter, t1: float, t2: float, costs: TierCosts) -> di
         "escalation_fpr_ratio": fairness,
     }
     row.update({f"escalation_rate_{name}": rate for name, rate in escalation.items()})
+    row.update({f"review_rate_{name}": rate for name, rate in review_by_group.items()})
     return row
 
 
@@ -178,6 +187,8 @@ def search_policies(
                 continue
             row = _policy_row(counter, t1, t2, costs)
             row["binary"] = escalate_rate == review_rate
+            row["escalate_alert_rate"] = escalate_rate  # grid point, for quantile thresholds
+            row["review_alert_rate"] = review_rate
             rows.append(row)
 
     table = pd.DataFrame(rows).drop_duplicates(subset=["t1", "t2"])

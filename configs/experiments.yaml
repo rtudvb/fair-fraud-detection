@@ -10,7 +10,7 @@ synthetic:
   rows: 40000 # rows per synthetic variant for --synthetic runs (pipeline checks only)
 
 # Rows per model are capped by a stratified subsample of the training months. Foundation
-# models start at 50k on the 8 GB RTX 2080; raise it if memory allows (TabPFN-3.5 accepts 1M).
+# models start at 50k on the 11 GB RTX 2080 Ti; raise it if memory allows (TabPFN-3.5 accepts 1M).
 max_train_rows:
   tabpfn: 50000
   tabicl: 50000
@@ -22,6 +22,7 @@ reproduction: # E1, Jesus et al. (2022) Figure 1
   variants: [base, variant_1, variant_2, variant_3, variant_4, variant_5]
   space_file: configs/models/lightgbm_baf_space.yaml
   n_trials: { base: 100, variants: 20 } # variants reuse the first 20 configurations of Base
+  variants_include_base_top_k: true # ...plus the top_k Base configurations (run Base first)
   max_estimators: null # cap n_estimators (null = paper range up to 10,000)
   top_k: 5
 
@@ -43,7 +44,7 @@ tuned: # E3, equal tuning budget for every model that has hyperparameters
 
 learning_curve: # E4; sizes and repeats come from base.yaml `learning_curve`
   variant: base
-  models: [logreg, xgboost, lightgbm, catboost, realmlp, tabm, tabpfn, tabicl]
+  models: [logreg, random_forest, xgboost, lightgbm, catboost, mlp, realmlp, tabm, tabpfn, tabicl]
 
 fairness: # E5-E6
   variant: base
@@ -94,6 +95,10 @@ small_bank: # E10 (go / no-go at the 11/15 checkpoint)
     batch_size: 1024
     lr: 0.001
     hidden: [128, 64]
+    # Early stopping for every MLP (local, FedAvg, pooled): 10% of each bank's training rows
+    # are held out; the weights with the lowest held-out loss are kept (patience 5 rounds).
+    val_fraction: 0.1
+    patience: 5
 
 app: # E11, aggregated score histograms only (no raw rows leave the machine)
   variant: base

@@ -85,6 +85,11 @@ class TrainConfig:
     pos_weight: float = 1.0
     device: str = "cpu"
     seed: int = 0
+    # Early stopping: hold out this share of each training set (stratified) and keep the
+    # weights with the lowest held-out loss; stop after ``patience`` rounds without a gain.
+    # None (the default) trains for the full budget, as in the first version of E10.
+    val_fraction: float | None = None
+    patience: int = 5
 
 
 def _train_epochs(model, X: np.ndarray, y: np.ndarray, epochs: int, cfg: TrainConfig, rng):
@@ -120,17 +125,76 @@ def predict(model, X: np.ndarray, device: str = "cpu", batch_size: int = 65536) 
     return np.concatenate(out) if out else np.empty(0)
 
 
+def split_holdout(X: np.ndarray, y: np.ndarray, fraction: float, rng):
+    """Stratified (train, held-out) split; every class keeps at least one training row."""
+    y = np.asarray(y)
+    held = np.zeros(len(y), dtype=bool)
+    for label in np.unique(y):
+        idx = np.flatnonzero(y == label)
+        n = min(round(fraction * idx.size), idx.size - 1)
+        held[rng.choice(idx, size=max(n, 0), replace=False)] = True
+    return (X[~held], y[~held]), (X[held], y[held])
+
+
+def _holdout_loss(model, held: Sequence[tuple[np.ndarray, np.ndarray]], cfg: TrainConfig):
+    """Size-weighted BCE (with the training ``pos_weight``) over the held-out sets."""
+    import torch
+
+    model.eval()
+    loss_fn = torch.nn.BCEWithLogitsLoss(
+        pos_weight=torch.tensor([cfg.pos_weight], device=cfg.device), reduction="sum"
+    )
+    total, count = 0.0, 0
+    with torch.no_grad():
+        for X, y in held:
+            if len(y) == 0:
+                continue
+            logits = model(torch.from_numpy(X).to(cfg.device)).squeeze(1)
+            target = torch.from_numpy(np.asarray(y, dtype=np.float32)).to(cfg.device)
+            total += float(loss_fn(logits, target))
+            count += len(y)
+    return total / max(count, 1)
+
+
+class _EarlyStopping:
+    """Keeps the best weights seen so far; ``step`` returns True when training should stop."""
+
+    def __init__(self, patience: int) -> None:
+        self.patience, self.best, self.state, self.waited = patience, np.inf, None, 0
+
+    def step(self, model, loss: float) -> bool:
+        if loss < self.best:
+            self.best, self.state, self.waited = loss, copy.deepcopy(model.state_dict()), 0
+            return False
+        self.waited += 1
+        return self.waited >= self.patience
+
+    def restore(self, model):
+        if self.state is not None:
+            model.load_state_dict(self.state)
+        return model
+
+
 def train_single(X: np.ndarray, y: np.ndarray, cfg: TrainConfig):
     """Ordinary training on one data set (a local bank, or pooled data as reference).
 
-    Uses ``rounds * local_epochs`` epochs, the same amount of passes as federated training.
+    Uses up to ``rounds * local_epochs`` epochs, the same budget as federated training; with
+    ``cfg.val_fraction`` set, stops early on the held-out loss and keeps the best weights.
     """
     import torch
 
     torch.manual_seed(cfg.seed)
     model = _mlp(X.shape[1], cfg.hidden).to(cfg.device)
     rng = np.random.default_rng(cfg.seed)
-    return _train_epochs(model, X, y, cfg.rounds * cfg.local_epochs, cfg, rng)
+    if not cfg.val_fraction:
+        return _train_epochs(model, X, y, cfg.rounds * cfg.local_epochs, cfg, rng)
+    (X_fit, y_fit), held = split_holdout(X, y, cfg.val_fraction, rng)
+    stopper = _EarlyStopping(cfg.patience)
+    for _ in range(cfg.rounds * cfg.local_epochs):
+        _train_epochs(model, X_fit, y_fit, 1, cfg, rng)
+        if stopper.step(model, _holdout_loss(model, [held], cfg)):
+            break
+    return stopper.restore(model)
 
 
 def train_fedavg(clients: Sequence[tuple[np.ndarray, np.ndarray]], cfg: TrainConfig):
@@ -142,6 +206,12 @@ def train_fedavg(clients: Sequence[tuple[np.ndarray, np.ndarray]], cfg: TrainCon
     sizes = np.array([len(X) for X, _ in clients], dtype=float)
     weights = sizes / sizes.sum()
     rng = np.random.default_rng(cfg.seed)
+    held: list[tuple[np.ndarray, np.ndarray]] = []
+    if cfg.val_fraction:  # each bank keeps its own held-out rows; only the loss is shared
+        splits = [split_holdout(X, y, cfg.val_fraction, rng) for X, y in clients]
+        clients = [fit for fit, _ in splits]
+        held = [h for _, h in splits]
+    stopper = _EarlyStopping(cfg.patience)
     for round_ in range(cfg.rounds):
         states = []
         for X, y in clients:
@@ -154,4 +224,6 @@ def train_fedavg(clients: Sequence[tuple[np.ndarray, np.ndarray]], cfg: TrainCon
         }
         global_model.load_state_dict(averaged)
         log.debug("FedAvg round %d/%d done", round_ + 1, cfg.rounds)
-    return global_model
+        if held and stopper.step(global_model, _holdout_loss(global_model, held, cfg)):
+            break
+    return stopper.restore(global_model) if held else global_model

@@ -23,14 +23,32 @@ constraints:
   # the cheapest policy and the model irrelevant (see the all_limited reference policy).
   verify_capacity_rate: 0.10
   min_fpr_ratio: 0.8 # age fairness of being escalated (tier >= 2) among legitimate applicants
+  # The *_buffered policies are chosen against capacities shrunk to this share (10% margin),
+  # because fixed thresholds drift with the score distribution (report §4.4).
+  capacity_buffer: 0.9
 
 search:
   # Thresholds are placed at these alert rates (share of applications at or above the threshold).
-  alert_rates: [0.001, 0.002, 0.005, 0.01, 0.02, 0.03, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.5]
+  # Dense below the capacities (2% review, 10% verification) so the best feasible policy is
+  # not pushed down to a coarse grid point; coarser above them.
+  alert_rates: [
+    0.001, 0.002, 0.003, 0.004, 0.005, 0.0075,
+    0.01, 0.0125, 0.015, 0.0175, 0.02, 0.025, 0.03, 0.04,
+    0.05, 0.055, 0.06, 0.065, 0.07, 0.075, 0.08, 0.085, 0.09, 0.095, 0.1,
+    0.11, 0.12, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5,
+  ]
 
 sensitivity: # one assumption changes at a time; the others stay at the values above
-  loss_full_multipliers: [0.25, 4.0]
+  loss_full_multipliers: [0.25, 4.0] # both losses together (keeps the 4:1 ratio)
+  loss_limited_multipliers: [0.5, 2.0] # limited-account loss only: 25,000 / 100,000
   verify_catch: [0.3, 0.8]
+  review_catch: [0.7, 0.95]
+  cost_verify: [25, 150]
+  cost_review: [150, 600]
   cost_friction: [500, 1000]
+  cost_attrition: [1000, 5000]
   review_capacity_rate: [0.01, 0.05]
   verify_capacity_rate: [0.05, 0.2]
+  scenarios: # several assumptions at once
+    樂觀情境: { verify_catch: 0.8, loss_limited: 25000, cost_friction: 100, cost_attrition: 1000 }
+    保守情境: { verify_catch: 0.3, loss_limited: 100000, cost_friction: 500, cost_attrition: 5000 }

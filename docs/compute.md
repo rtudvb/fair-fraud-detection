@@ -1,9 +1,9 @@
-# 運算環境設定（Windows 實驗室桌機 + RTX 2080）
+# 運算環境設定（Windows 實驗室桌機 + RTX 2080 Ti）
 
 | 環境 | 用途 |
 |---|---|
-| **實驗室桌機（Windows + RTX 2080，主力）** | 所有實驗；長時間任務（600 次 LightGBM、學習曲線）可以整晚跑 |
-| Kaggle Notebook（備援） | 2080 的 8GB 顯示記憶體不夠時，用 16GB GPU 跑基礎模型的大資料量 |
+| **實驗室桌機（Windows + RTX 2080 Ti，主力）** | 所有實驗；長時間任務（600 次 LightGBM、學習曲線）可以整晚跑 |
+| Kaggle Notebook（備援） | 2080 Ti 的 11GB 顯示記憶體不夠時，用 16GB GPU 跑基礎模型的大資料量 |
 
 **做法**：在 Windows 上裝 **WSL2（Windows 內建的 Ubuntu Linux）**，程式在 Ubuntu 裡跑，
 用 Windows 的 VS Code 連進去編輯。這樣 `make`、`tmux` 等指令都能用，GPU 也能直接使用，
@@ -33,7 +33,7 @@
 
 WSL2 會直接使用 **Windows 的** NVIDIA 驅動程式，所以只要在 Windows 裝好驅動。
 
-1. 到 NVIDIA 官網驅動程式下載頁，選 **GeForce RTX 20 Series → RTX 2080 → Windows**，
+1. 到 NVIDIA 官網驅動程式下載頁，選 **GeForce RTX 20 Series → RTX 2080 Ti → Windows**，
    下載最新版 **Game Ready** 或 **Studio** 驅動程式並安裝（或用 NVIDIA App 更新）。
 2. 安裝完重新開機。
 3. 開 PowerShell 執行：
@@ -42,7 +42,7 @@ WSL2 會直接使用 **Windows 的** NVIDIA 驅動程式，所以只要在 Windo
    PS> nvidia-smi
    ```
 
-✅ 檢查：表格中看得到 **NVIDIA GeForce RTX 2080**，右上角有 **Driver Version** 和 **CUDA Version**。
+✅ 檢查：表格中看得到 **NVIDIA GeForce RTX 2080 Ti**，右上角有 **Driver Version** 和 **CUDA Version**。
 把 CUDA Version 的數字記下來（第 6 步會用到）。
 
 > ⚠️ 之後**不要在 Ubuntu 裡安裝任何 NVIDIA 驅動程式**，會把 WSL 的 GPU 支援弄壞。
@@ -83,7 +83,7 @@ $ sudo apt install -y build-essential git make curl tmux python3-venv python3-pi
 ✅ 檢查：
 
 ```bash
-$ nvidia-smi          # 要看到 RTX 2080（這是 Windows 驅動提供的）
+$ nvidia-smi          # 要看到 RTX 2080 Ti（這是 Windows 驅動提供的）
 $ python3 --version   # 3.10 以上（Ubuntu 24.04 內建 3.12）
 $ git --version && make --version | head -1 && tmux -V
 ```
@@ -102,8 +102,8 @@ WSL 預設只能用電腦一半的記憶體。BAF 單一資料集 100 萬筆，�
 
    ```ini
    [wsl2]
-   # 依電腦記憶體調整：總記憶體 32GB 填 24GB；16GB 填 12GB（留一些給 Windows）
-   memory=24GB
+   # 依電腦記憶體調整：總記憶體 64GB 填 48GB（本研究的桌機）；32GB 填 24GB；16GB 填 12GB（留一些給 Windows）
+   memory=48GB
    swap=16GB
    ```
 
@@ -163,7 +163,7 @@ $ pip install torch                   # PyTorch（含 GPU 支援，約 2–3 GB�
 $ python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
 
-最後要看到 `True NVIDIA GeForce RTX 2080`。
+最後要看到 `True NVIDIA GeForce RTX 2080 Ti`。
 
 > **出現 `False` 或錯誤**：比較兩個數字——第 1 步記下的 `nvidia-smi` **CUDA Version**，
 > 和上面印出的 `torch.version.cuda`。前者必須**大於或等於**後者。不夠的話先更新 Windows 驅動；
@@ -232,7 +232,7 @@ $ make smoke
 
 ✅ 檢查：
 
-- `GPU` 那行顯示 **NVIDIA GeForce RTX 2080, 8.0 GB**，下一行是 `GPU test matrix multiply OK`
+- `GPU` 那行顯示 **NVIDIA GeForce RTX 2080 Ti, 11.0 GB**，下一行是 `GPU test matrix multiply OK`
 - 最後一行是 **`10/10 models OK`**
 
 > 假資料是隨機產生的，AUC 數字沒有意義（甚至可能低於 0.5），只用來確認「跑得起來」。
@@ -294,7 +294,7 @@ $ tmux attach -t exp            # 之後回來查看進度
 
 ## 備援：Kaggle Notebook
 
-2080 跑基礎模型的大資料量出現 `CUDA out of memory` 時，改用 Kaggle 的 16GB GPU：
+2080 Ti 跑基礎模型的大資料量出現 `CUDA out of memory` 時，改用 Kaggle 的 16GB GPU：
 
 1. Kaggle 帳號完成手機驗證（才能開 GPU 與網路）。
 2. 新增 Notebook → Settings：**Accelerator 選 GPU、Internet 打開**；Add Input 加入資料集

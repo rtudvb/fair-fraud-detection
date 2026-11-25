@@ -56,3 +56,25 @@ def test_fedavg_trains_and_predicts():
     assert scores[y0].mean() > scores[~y0].mean()  # learned the signal
     local = train_single(*clients[0], cfg)
     assert predict(local, clients[0][0]).shape == (300,)
+
+
+def test_early_stopping_keeps_best_weights():
+    pytest.importorskip("torch")
+    from frauddetect.federated.fedavg import (
+        TrainConfig,
+        predict,
+        split_holdout,
+        train_fedavg,
+        train_single,
+    )
+
+    rng = np.random.default_rng(1)
+    X = rng.normal(size=(400, 4)).astype(np.float32)
+    y = (X[:, 0] + 0.5 * rng.normal(size=400) > 1).astype(int)
+    (_, y_fit), (_, y_held) = split_holdout(X, y, 0.25, rng)
+    assert len(y_fit) + len(y_held) == 400
+    assert y_held.sum() >= 1 and y_fit.sum() >= 1  # both classes on both sides
+    cfg = TrainConfig(hidden=(8,), rounds=40, batch_size=64, lr=0.01, val_fraction=0.2, patience=2)
+    for model in (train_single(X, y, cfg), train_fedavg([(X, y), (X[:200], y[:200])], cfg)):
+        scores = predict(model, X)
+        assert scores[y == 1].mean() > scores[y == 0].mean()

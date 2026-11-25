@@ -35,7 +35,7 @@ GROUP_LABELS = {"younger": "未滿 50 歲", "older": "50 歲以上"}
 
 # Ordinal ramp for tiers 1 -> 3 (one hue, light to dark; light end clears 2:1 on white).
 TIER_COLORS = {1: "#86b6ef", 2: "#2a78d6", 3: "#104281"}
-TIER_LABELS = {1: "一級：正常開戶", 2: "二級：限額＋加強驗證", 3: "三級：人工審核"}
+TIER_LABELS = {1: "一級：正常開戶", 2: "二級：加強驗證", 3: "三級：人工審核"}
 
 # Models inside one family share the family color and differ by marker.
 MODEL_MARKERS = {

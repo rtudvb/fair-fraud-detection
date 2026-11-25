@@ -131,6 +131,8 @@ class ScoreHistogram:
             "fraud_tier1": fraud[1],
             "fraud_tier2": fraud[2],
             "fraud_tier3": fraud[3],
+            # expected frauds stopped: escalation alone stops none, verification and review do
+            "fraud_caught": fraud[2] * costs.verify_catch + fraud[3] * costs.review_catch,
             "fraud_loss_per_app": fraud_loss / n,
             "operations_per_app": operations / n,
             "customer_per_app": customer / n,

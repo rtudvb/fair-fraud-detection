@@ -172,6 +172,8 @@ def _neural_methods(ctx, section, banks) -> dict[str, list[np.ndarray]]:
         pos_weight=(total - positives) / max(positives, 1),
         device=ctx.device,
         seed=ctx.seed,
+        val_fraction=fed.get("val_fraction"),
+        patience=int(fed.get("patience", 5)),
     )
     out: dict[str, list[np.ndarray]] = {}
     out["local_mlp"] = [

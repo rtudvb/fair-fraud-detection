@@ -113,11 +113,12 @@ def _plot_monthly(table: pd.DataFrame):
     left.set(title="每月申請件數", xlabel="月份（0–7）", ylabel="件數（千）")
     right.plot(table[MONTH], table["fraud_rate"] * 100, color=ORANGE, marker="o")
     right.set(title="每月詐騙率", xlabel="月份（0–7）", ylabel="詐騙率（%）")
-    right.set_ylim(bottom=0)
+    right.set_ylim(0, table["fraud_rate"].max() * 100 * 1.25)  # headroom for the label
     for ax in (left, right):
         ax.set_xticks(table[MONTH])
         ax.axvspan(5.5, 7.5, color=INK_SECONDARY, alpha=0.06, lw=0)
-    right.annotate("測試期", xy=(6.5, right.get_ylim()[1] * 0.92), ha="center", color=INK_SECONDARY)
+        top = ax.get_ylim()[1]
+        ax.text(6.5, top * 0.97, "測試期", ha="center", va="top", color=INK_SECONDARY)
     fig.tight_layout()
     return fig
 

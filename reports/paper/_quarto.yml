@@ -1,5 +1,6 @@
 project:
   output-dir: _output
+  render: [index.qmd] # the tables/*.md files are inputs of the report, not documents
   post-render: postprocess_docx.py # Word layout (第一章, 表 1-1, 三線表, 目錄); no-op for PDF
 
 lang: en-US # citeproc locale (et al., English dates); the Typst body language is set in style.typ
@@ -19,6 +20,7 @@ language:
 crossref:
   fig-prefix: 圖
   tbl-prefix: 表
+  eq-prefix: 式
   sec-prefix: 第
 
 format:

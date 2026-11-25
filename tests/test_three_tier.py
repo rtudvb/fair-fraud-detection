@@ -148,3 +148,27 @@ def test_search_respects_verification_capacity(scores):
     assert (feasible["tier2_rate"] <= 0.05).all()
     assert (~table["feasible"]).any()  # policies with more verification are ruled out
     assert best_policy(table)["tier2_rate"] <= 0.05
+
+
+def test_fraud_outcomes_and_group_review_rates(scores):
+    y, s = scores
+    groups = np.where(np.arange(s.size) % 3 == 0, "older", "younger")
+    t1, t2 = np.quantile(s, [0.9, 0.98])
+    row = evaluate_policy(y, s, t1, t2, COSTS, groups=groups)
+    caught = row["fraud_tier2"] * COSTS.verify_catch + row["fraud_tier3"] * COSTS.review_catch
+    assert row["fraud_caught"] == pytest.approx(caught)
+    frauds = row["fraud_tier1"] + row["fraud_tier2"] + row["fraud_tier3"]
+    opened = row["fraud_open_full"] + row["fraud_open_limited"]
+    assert opened + row["fraud_caught"] == pytest.approx(frauds)  # every fraud is accounted for
+    tiers = assign_tiers(s, t1, t2)
+    for name in ("older", "younger"):
+        legit = (y == 0) & (groups == name)
+        assert row[f"review_rate_{name}"] == pytest.approx(np.mean(tiers[legit] == 3))
+
+
+def test_search_records_grid_alert_rates(scores):
+    y, s = scores
+    table = search_policies(y, s, COSTS, alert_rates=(0.01, 0.05, 0.1))
+    for _, row in table.iterrows():
+        assert row["review_alert_rate"] <= row["escalate_alert_rate"]
+        assert row["binary"] == (row["review_alert_rate"] == row["escalate_alert_rate"])

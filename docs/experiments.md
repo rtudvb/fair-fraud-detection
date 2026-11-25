@@ -14,19 +14,19 @@ make pipeline-check     # 約 5–10 分鐘；所有實驗用假資料各跑一�
 
 ## 實驗一覽
 
-| 指令 | 實驗 | 回答 | 主要圖表（`reports/paper/figures/`） | 報告章節 | 粗估時間（RTX 2080） |
+| 指令 | 實驗 | 回答 | 主要圖表（`reports/paper/figures/`） | 報告章節 | 粗估時間（RTX 2080 Ti） |
 |---|---|---|---|---|---|
-| `make eda` | E0 資料探索 | 背景 | `e0_monthly`、`e0_age`、`e0_missing` | 3.1–3.2 | 數分鐘 |
+| `make eda` | E0 資料探索 | 背景 | `e0_monthly`、`e0_age`、`e0_missing` | 3.2 | 數分鐘 |
 | `make reproduce` | E1 重現原論文 | RQ1 | `e1_figure1` | 4.1 | 3–8 小時（可中斷續跑） |
 | `make benchmark` | E2 十個模型（預設參數） | RQ2 | `e2_tpr`、`e2_cost_vs_performance`、`e2_fairness_vs_performance` | 4.2 | 1–3 小時 |
 | `make tuned` | E3 調參組 | RQ2 | `e3_default_vs_tuned` | 4.2 | 4–10 小時（可續跑） |
-| `make learning-curve` | E4 學習曲線 | RQ2、RQ6 | `e4_learning_curve` | 4.3 | 1–3 小時（可續跑） |
-| `make fairness` | E5–E6 年齡公平性 | RQ3 | `e5_group_fpr`、`e5_cutoff_sensitivity`、`e6_tradeoff` | 4.4 | 20–60 分鐘 |
-| `make decision` | E7 三級分流 | RQ4 | `e7_cost_breakdown`、`e7_tiers`、`e7_cost_surface` | 4.5 | 數分鐘 |
-| `make explain` | E8 SHAP 與規則 | RQ5 | `e8_shap_importance`、`e8_shap_beeswarm`、`e8_shap_dependence` | 4.6 | 10–20 分鐘 |
-| `make monitor` | E9 上線監控 | 第五章 | `e9_monthly` | 5 | 數分鐘 |
-| `make small-bank` | E10 小銀行困境 | RQ6 | `e10_small_bank` | 4.7 | 30–90 分鐘 |
-| `make app-data` | E11 Demo 資料 | 展示 | （`app/data/score_histogram.json`） | — | 數分鐘 |
+| `make learning-curve` | E4 學習曲線 | RQ2、RQ6 | `e4_learning_curve` | 4.2 | 1–3 小時（可續跑） |
+| `make fairness` | E5–E6 年齡公平性 | RQ3 | `e5_group_fpr`、`e5_cutoff_sensitivity`、`e6_tradeoff` | 4.3 | 20–60 分鐘 |
+| `make decision` | E7 三級分流 | RQ4 | `e7_cost_breakdown`、`e7_tiers`、`e7_cost_surface` | 4.4 | 數分鐘 |
+| `make explain` | E8 SHAP 與規則 | RQ5 | `e8_shap_importance`、`e8_shap_beeswarm`、`e8_shap_dependence` | 4.5 | 10–20 分鐘 |
+| `make monitor` | E9 上線監控 | 第五章 | `e9_monthly` | 5.5 | 數分鐘 |
+| `make small-bank` | E10 小銀行困境 | RQ6 | `e10_small_bank` | 4.6 | 30–90 分鐘 |
+| `make app-data` | E11 決策支援系統資料 | 展示 | （`app/data/score_histogram.json`） | 5.6 | 數分鐘 |
 
 時間是粗估，實際依 CPU、記憶體與設定而定。表格（`reports/paper/tables/*.md`）與完整數字（`results/<實驗>/*.csv`）同時產生。
 

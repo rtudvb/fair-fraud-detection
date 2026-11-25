@@ -40,6 +40,9 @@ def test_three_tier_cost_matches_decision_module(data):
     exact = evaluate_policy(y, s, hist.edges[b1], hist.edges[b2], COSTS)
     assert result["cost_per_app"] == pytest.approx(exact["cost_per_application"])
     assert result["tier3_share"] == pytest.approx(exact["review_rate"])
+    caught = result["fraud_tier2"] * COSTS.verify_catch + result["fraud_tier3"] * COSTS.review_catch
+    assert result["fraud_caught"] == pytest.approx(caught)
+    assert result["fraud_caught"] <= result["fraud_tier2"] + result["fraud_tier3"]
     with pytest.raises(ValueError):
         hist.three_tier(b2, b1, COSTS)
 
@@ -59,5 +62,13 @@ def test_streamlit_app_renders_demo_data():
     app = AppTest.from_file(str(Path(__file__).parents[1] / "app" / "streamlit_app.py"))
     app.run(timeout=60)
     assert not app.exception
-    assert app.title[0].value == "風控門檻模擬器"
-    assert len(app.metric) == 4
+    assert app.title[0].value == "開戶風控決策支援系統"
+    page = " ".join(block.value for block in app.markdown)
+    for label in (
+        "詐騙預期攔截率",
+        "正常客戶受影響比例",
+        "年齡公平性",
+        "每件申請期望成本",
+        "人力上限",
+    ):
+        assert label in page, label

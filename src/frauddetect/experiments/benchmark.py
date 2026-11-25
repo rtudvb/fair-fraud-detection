@@ -300,8 +300,10 @@ def run_tuned(ctx: ExperimentContext) -> pd.DataFrame:
     split = split_from_config(ctx.load(variant), ctx.config, "main")
     storage = f"sqlite:///{ctx.out_dir / 'optuna.db'}"
     optuna.logging.set_verbosity(optuna.logging.WARNING)
+    n_boot = int(ctx.section("benchmark").get("n_boot", 1000))
+    previous = _previous_hpo_seconds(ctx)
 
-    rows = []
+    rows, test_scores = [], {}
     for model in ctx.models("tuned"):
         spec = spaces.get(model)
         if spec is None:
@@ -339,13 +341,24 @@ def run_tuned(ctx: ExperimentContext) -> pd.DataFrame:
             rows.append(_failure_row(model, exc))
             continue
         test = run.part("test")
+        y, s = test["y"].to_numpy(), test["score"].to_numpy()
         metrics = evaluate_scores(
-            test["y"].to_numpy(),
-            test["score"].to_numpy(),
-            test["age"].to_numpy(),
-            target_fpr=ctx.target_fpr,
-            cutoff=_cutoff(ctx),
+            y, s, test["age"].to_numpy(), target_fpr=ctx.target_fpr, cutoff=_cutoff(ctx)
         )
+        test_scores[model] = (y, s)
+        ci = bootstrap_ci(
+            lambda yy, ss: tpr_at_fpr(yy, ss, ctx.target_fpr),
+            y,
+            s,
+            n_boot=n_boot,
+            strata=y,
+            seed=ctx.seed,
+        )
+        metrics |= {"tpr_ci_low": ci.low, "tpr_ci_high": ci.high}
+        # A resumed run (all trials already in optuna.db) only re-scores the best model, so
+        # keep the search time measured when the trials actually ran.
+        elapsed = time.perf_counter() - start
+        hpo_seconds = previous.get(model, elapsed) if completed >= n_trials else elapsed
         rows.append(
             {
                 "model": model,
@@ -354,17 +367,39 @@ def run_tuned(ctx: ExperimentContext) -> pd.DataFrame:
                 "n_trials": len(study.trials),
                 "valid_tpr_best": study.best_value,
                 **{f"test_{k}": v for k, v in metrics.items()},
-                "hpo_seconds": time.perf_counter() - start,
+                "hpo_seconds": hpo_seconds,
                 "best_params": json.dumps(runtime_params(ctx, model, best), default=str),
             }
         )
     tuned = pd.DataFrame(rows)
+    tuned = _add_tuned_paired_tests(tuned, test_scores, ctx, n_boot)
     tuned = _attach_default(ctx, tuned)
     ctx.save_table(tuned, "e3_tuned")
     ok = tuned.loc[tuned["status"] == "ok"] if "status" in tuned else tuned
     if not ok.empty and ok["default_tpr_at_fpr"].notna().any():
         ctx.save_figure(plot_default_vs_tuned(ok), "e3_default_vs_tuned")
     return tuned
+
+
+def _previous_hpo_seconds(ctx: ExperimentContext) -> dict[str, float]:
+    path = ctx.out_dir / "e3_tuned.csv"
+    if not path.exists():
+        return {}
+    old = pd.read_csv(path)
+    if "hpo_seconds" not in old or "model" not in old:
+        return {}
+    return old.dropna(subset=["hpo_seconds"]).set_index("model")["hpo_seconds"].to_dict()
+
+
+def _add_tuned_paired_tests(tuned: pd.DataFrame, scores: dict, ctx, n_boot: int) -> pd.DataFrame:
+    """Test-TPR difference of every tuned model to the best tuned model (paired bootstrap)."""
+    if tuned.empty or "test_tpr_at_fpr" not in tuned or not scores:
+        return tuned
+    renamed = tuned.rename(columns={"test_tpr_at_fpr": "tpr_at_fpr"})
+    ok = renamed.loc[renamed["model"].isin(scores)].copy()
+    tested = _add_paired_tests(ok, scores, ctx, n_boot)
+    extra = tested.set_index("model")[["best_model", "tpr_diff_to_best", "p_value_vs_best"]]
+    return tuned.join(extra, on="model")
 
 
 def _decode_best(trial, space: dict) -> dict:
@@ -499,5 +534,30 @@ def plot_learning_curve(agg: pd.DataFrame):
     left.set(title="資料量與偵測率", ylabel="偵測率（TPR@5%FPR）")
     right.set(title="資料量與訓練時間", ylabel="秒（對數尺度）")
     left.legend(fontsize=8, ncol=2, loc="lower right")
+
+    # Foundation models stop at their context cap (max_train_rows), not for lack of results.
+    foundation = agg.loc[agg["family"] == "foundation"]
+    if not foundation.empty and foundation["size"].max() < agg["size"].max():
+        cap = foundation["size"].max()
+        at_cap = foundation.loc[foundation["size"] == cap]
+        top, ymax = at_cap["tpr_mean"].max(), agg["tpr_max"].max()
+        left.set_ylim(top=max(ymax, top + 0.08))
+        left.annotate(
+            f"基礎模型受 GPU 記憶體限制，\n最多使用 {cap:,.0f} 筆",
+            xy=(cap, top),
+            xytext=(cap, top + 0.05),
+            ha="center",
+            fontsize=8,
+            arrowprops={"arrowstyle": "->", "color": INK_SECONDARY, "lw": 0.8},
+        )
+        right.annotate(
+            "基礎模型的「訓練」只儲存情境資料，\n主要運算成本在預測階段",
+            xy=(cap, at_cap["fit_seconds"].max()),
+            xytext=(agg["size"].min(), agg["fit_seconds"].max() / 3),
+            ha="left",
+            va="top",
+            fontsize=8,
+            arrowprops={"arrowstyle": "->", "color": INK_SECONDARY, "lw": 0.8},
+        )
     fig.tight_layout()
     return fig

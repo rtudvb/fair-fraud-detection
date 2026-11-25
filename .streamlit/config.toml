@@ -1,0 +1,22 @@
+# Theme of the decision-support app (app/streamlit_app.py): a sober, report-like look.
+# Streamlit reads this file when it is started from the repository root (`make app`).
+
+[theme]
+base = "light"
+primaryColor = "#1F3A5F"            # navy, the only accent colour
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F5F7"
+textColor = "#1F2328"
+borderColor = "#DADDE2"
+showWidgetBorder = true
+baseRadius = "small"
+font = "sans-serif"
+
+[theme.sidebar]
+backgroundColor = "#F4F5F7"
+
+[client]
+toolbarMode = "minimal"             # no Deploy button or developer menu
+
+[browser]
+gatherUsageStats = false

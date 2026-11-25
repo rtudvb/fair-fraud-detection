@@ -201,6 +201,8 @@ def _rates_row(model, method, target, y, flagged, groups) -> dict:
         "fpr_younger": rates["fpr"].get(YOUNGER, np.nan),
         "fpr_older": rates["fpr"].get(OLDER, np.nan),
         "fpr_ratio": fpr_ratio(y, flagged, groups),
+        "tpr_younger": rates["tpr"].get(YOUNGER, np.nan),
+        "tpr_older": rates["tpr"].get(OLDER, np.nan),
     }
 
 
@@ -267,6 +269,14 @@ def fairgbm_runs(ctx: ExperimentContext, variant: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+FAIRGBM_STYLES = {  # tolerance -> (colour, marker); darker means a looser constraint
+    0.02: ("#0b5d44", "^"),
+    0.01: ("#138a63", "v"),
+    0.005: ("#2fb383", "<"),
+    0.0: ("#7fd3b2", ">"),
+}
+
+
 def _tradeoff_style(model: str, method: str) -> tuple[str, str, str]:
     """(color, marker, label): color encodes the method, marker the model."""
     if method == "global_threshold":
@@ -276,7 +286,9 @@ def _tradeoff_style(model: str, method: str) -> tuple[str, str, str]:
     if model == "lightgbm_same_params":
         return BLUE, "D", "LightGBM（與 FairGBM 同參數，未限制）"
     tolerance = model.split("_tol")[-1].split("_mlr")[0]
-    return AQUA, "^", f"FairGBM（容忍差距 {tolerance}）"
+    # one marker and shade per tolerance, so the four FairGBM lines can be told apart
+    shade, marker = FAIRGBM_STYLES.get(float(tolerance), (AQUA, "^"))
+    return shade, marker, f"FairGBM（容許差距 {tolerance}）"
 
 
 def plot_tradeoff(table: pd.DataFrame, target: float):
