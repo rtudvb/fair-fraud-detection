@@ -269,11 +269,11 @@ def fairgbm_runs(ctx: ExperimentContext, variant: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-FAIRGBM_STYLES = {  # tolerance -> (colour, marker); darker means a looser constraint
-    0.02: ("#0b5d44", "^"),
-    0.01: ("#138a63", "v"),
-    0.005: ("#2fb383", "<"),
-    0.0: ("#7fd3b2", ">"),
+FAIRGBM_STYLES = {  # tolerance -> (colour, marker, line); darker means a looser constraint
+    0.02: ("#0b4f3a", "^", (0, (1, 1.5))),
+    0.01: ("#1d8f66", "v", (0, (4, 1.5))),
+    0.005: ("#6cc4a0", "s", (0, (6, 2, 1, 2))),
+    0.0: ("#a9a9a9", "D", (0, (2, 3))),
 }
 
 
@@ -287,8 +287,16 @@ def _tradeoff_style(model: str, method: str) -> tuple[str, str, str]:
         return BLUE, "D", "LightGBM（與 FairGBM 同參數，未限制）"
     tolerance = model.split("_tol")[-1].split("_mlr")[0]
     # one marker and shade per tolerance, so the four FairGBM lines can be told apart
-    shade, marker = FAIRGBM_STYLES.get(float(tolerance), (AQUA, "^"))
+    shade, marker, _ = FAIRGBM_STYLES.get(float(tolerance), (AQUA, "^", ":"))
     return shade, marker, f"FairGBM（容許差距 {tolerance}）"
+
+
+def _tradeoff_line(model: str, method: str, default: str):
+    """Line style: per tolerance for FairGBM, so its four lines differ in more than shade."""
+    if method == "in_processing" and "_tol" in model:
+        tolerance = float(model.split("_tol")[-1].split("_mlr")[0])
+        return FAIRGBM_STYLES.get(tolerance, (None, None, default))[2]
+    return default
 
 
 def plot_tradeoff(table: pd.DataFrame, target: float):
@@ -301,7 +309,7 @@ def plot_tradeoff(table: pd.DataFrame, target: float):
         ax.plot(
             part["tpr"],
             part["fpr_ratio"],
-            ls=styles[method],
+            ls=_tradeoff_line(model, method, styles[method]),
             color=color,
             marker=marker,
             markersize=5,

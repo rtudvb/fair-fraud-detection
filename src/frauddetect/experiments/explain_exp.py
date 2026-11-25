@@ -102,6 +102,9 @@ def plot_dependence(values: np.ndarray, X: pd.DataFrame, table: pd.DataFrame, to
         ax.scatter(X[feature], values[:, j], s=4, alpha=0.35, color=BLUE, rasterized=True)
         ax.axhline(0, color=INK_MUTED, lw=0.8)
         ax.set(title=feature, xlabel="特徵值", ylabel="SHAP")
+        levels = np.unique(X[feature].dropna())
+        if set(levels) <= {0, 1}:  # binary feature: label only its two values
+            ax.set_xticks([0, 1])
     fig.tight_layout()
     return fig
 
