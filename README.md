@@ -1,7 +1,9 @@
 # fair-fraud-detection
 
-**從梯度提升樹到表格基礎模型：開戶詐騙偵測之公平與成本分析**
-*From Gradient Boosting to Tabular Foundation Models: Fairness and Cost in Account-Opening Fraud Detection*
+**兼顧公平與成本的開戶詐騙三級分流決策：從表格模型比較到決策支援系統**
+*Fair and Cost-Aware Three-Tier Decisions for Account-Opening Fraud: From Tabular Model Comparison to Decision Support System*
+
+📄 **報告全文（PDF）：[期中報告.pdf](期中報告.pdf)**
 
 > **Catch Fraud, Not Customers** — 抓詐騙，不誤傷好客戶。
 
@@ -9,7 +11,7 @@
 
 商業智慧課程期中報告。以 NeurIPS 2022 的銀行開戶詐騙基準資料集（BAF）為基礎，
 先**重現原論文**，再比較三代共十個 AI 模型的**偵測效能、年齡公平性與運算成本**，
-最後提出對應台灣數位存款帳戶分類的**三級分流決策模型**，並轉化為銀行可執行的管理建議。
+最後提出對應台灣數位存款帳戶分類的**三級分流決策模型**，實作為**開戶風控決策支援系統**，並轉化為銀行可執行的管理建議。
 
 報告中的每一張圖、每一張表，都由本專案的程式自動產生；資料自 Kaggle 下載後，主要結果可依指令重現（完整執行需 GPU，約 1–2 個晚上）。
 

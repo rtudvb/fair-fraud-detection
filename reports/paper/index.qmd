@@ -1,8 +1,8 @@
 ---
 title: |
-  從梯度提升樹到表格基礎模型：\
-  開戶詐騙偵測之公平與成本分析
-subtitle: "From Gradient Boosting to Tabular Foundation Models: Fairness and Cost in Account-Opening Fraud Detection"
+  兼顧公平與成本的開戶詐騙三級分流決策：\
+  從表格模型比較到決策支援系統
+subtitle: "Fair and Cost-Aware Three-Tier Decisions for Account-Opening Fraud: From Tabular Model Comparison to Decision Support System"
 author: "張壬郁"
 date: 2026-11-01
 date-format: "YYYY 年 M 月"
@@ -11,7 +11,7 @@ date-format: "YYYY 年 M 月"
 ::: {custom-style="RepoLink"}
 本報告的程式碼與完整實驗紀錄：<https://github.com/rtudvb/fair-fraud-detection>
 
-本報告所有圖表皆由上述專案的程式自動產生；程式碼與實驗設定公開，主要結果可依附錄 A 的指令重現（需自 Kaggle 下載資料，完整執行需 GPU，約 1 至 2 個晚上）
+程式碼與實驗設定公開，主要結果皆可依附錄 A 的指令重現
 :::
 
 # 摘要 {.unnumbered}
@@ -21,6 +21,14 @@ date-format: "YYYY 年 M 月"
 研究結果顯示：第一，在資料充足時，三代模型的偵測率差距僅 1 至 2 個百分點，經調參的梯度提升樹成本最低；資料較少時，表格基礎模型則明顯領先。第二，所有模型對 50 歲以上的正常申請者皆不公平，其誤判率約為較年輕者的 3 倍；以分組門檻處理後，誤判率比可由 0.34 提升至 0.90，偵測率僅降低約 1.6 個百分點。第三，以「加強驗證搭配限額開戶」取代直接拒絕的三級分流，將 10% 的申請導入加強驗證、1% 轉人工審核（原論文的二元決策需將 6.59% 轉人工審核）。在本研究的情境成本下（詐騙損失以帳戶轉帳限額為代理值，屬社會總成本觀點，而非銀行實際的財務節省），並以測試期的分數分布換算門檻、使各級比例維持在人力上限內的理想化校準為前提，其期望成本較人力上限內最佳的二元決策低 44.8%，也較原論文的二元決策低 23.8%。若再以年齡組別的分位數門檻（兩組各用一組門檻）使兩組正常申請者被升級的比例相近（升級 FPR 比 0.95），期望成本較未加此限制的三級分流增加 3.6%。三級分流的效益主要來自以限額帳戶降低詐騙損失，其成立的前提是限額確能降低短期的風險暴露，並取決於加強驗證的處理能量。此外，固定門檻上線後的審核量會隨分數分布漂移而超出人力上限，需以近期的分數分布定期校準門檻。最後，本研究在重現時發現，原論文正文、資料生成程式與公平性評估程式對年長組的定義不一致；原論文圖中變體資料的誤判率比與正文的定義相符，但若以資料中實際被注入偏差的年齡組計算，誤判率比低 2 至 3 倍，顯示原論文對變體資料公平性的解讀仍需進一步確認。
 
 本研究據此提出分級審核流程、模型導入策略、公平性稽核與上線監控等管理建議，對照金管會的 AI 指引與《人工智慧基本法》，並將決策模型實作為互動式的開戶風控決策支援系統，供銀行代入自身的成本參數。
+
+# Abstract {.unnumbered}
+
+Fraud rings move scam proceeds through mule accounts, which makes the account-opening review a bank's first line of defence against fraud. At that point, however, a bank must balance four goals: stopping fraud, not harming legitimate customers, controlling review costs and treating customer groups fairly. Building on the Bank Account Fraud (BAF) dataset published at NeurIPS 2022 [@jesus2022turning], this study first reproduces the original paper's findings and then compares ten models from three generations (gradient-boosted trees, tabular deep learning and tabular foundation models) in detection performance, age fairness and computational cost. Grounded in three-way decision theory, it proposes a three-tier decision model mapped to Taiwan's classification of digital deposit accounts.
+
+The results are as follows. First, with ample data the three generations differ by only one to two percentage points in detection rate, and tuned gradient-boosted trees are the cheapest; with little data, tabular foundation models clearly lead. Second, every model is unfair to legitimate applicants aged 50 and over, whose false positive rate is about three times that of younger applicants; group-specific thresholds raise the FPR ratio from 0.34 to 0.90 at a cost of only about 1.6 percentage points in detection rate. Third, a three-tier policy that replaces outright rejection with enhanced verification and a limited-function account sends 10% of applications to enhanced verification and 1% to manual review, whereas the original paper's binary policy sends 6.59% to manual review. Under the study's scenario costs (fraud losses proxied by account transfer limits, a social-cost view rather than savings a bank would realise) and an idealised calibration that derives thresholds from the test period's score distribution so that each tier stays within staff capacity, its expected cost is 44.8% lower than that of the best binary policy within capacity and 23.8% lower than that of the original paper's binary policy. Using per-age-group quantile thresholds to bring the escalation rates of legitimate applicants in the two groups close together (escalation FPR ratio 0.95) raises the expected cost by 3.6% relative to the three-tier policy without this constraint. The benefit of the three-tier policy comes mainly from limiting the losses of fraudulent accounts: it holds only if account limits do reduce short-term exposure, and it depends on the capacity for enhanced verification. Moreover, review volumes under fixed thresholds drift beyond staff capacity once deployed, so thresholds should be recalibrated regularly from recent score distributions. Finally, the reproduction reveals that the paper text, the data-generation code and the fairness-evaluation code define the older group inconsistently. The FPR ratios reported for the variant datasets match the paper's definition, but computed on the age group into which bias was actually injected they are two to three times lower, suggesting that the original interpretation of fairness on the variant datasets warrants further verification.
+
+Based on these findings, the study proposes a tiered review process, model-adoption strategies, fairness auditing and post-deployment monitoring, relates them to the Financial Supervisory Commission's AI guidelines and Taiwan's AI Basic Act, and implements the decision model as an interactive decision support system into which banks can enter their own cost parameters.
 
 ::: {custom-style="ShowcaseTitle"}
 從模型到管理實務：【開戶風控決策支援系統】
@@ -390,7 +398,7 @@ $$ {#eq-ops}
 其中，$\text{Loss}_{\text{fraud}}$ 代表詐騙造成的損失：進入第一級的詐騙帳戶可完整使用，進入第二級者須先通過加強驗證，被攔下者（機率 $v$）婉拒開戶而不造成損失，未被攔下者（機率 $1 - v$）則以限額帳戶開戶，在觀察期內只能於限額內使用（本研究假設人頭帳戶的損失主要發生在開戶後的短期內，故以限額作為其損失），進入第三級者若未被人工審核攔下（機率 $1 - r$）則可完整使用；$L_{\text{full}}$ 與 $L_{\text{limited}}$ 分別為詐騙帳戶在完整功能與限額下的損失，$v$ 與 $r$ 分別為加強驗證與人工審核攔下詐騙的機率。$\text{Cost}_{\text{customer}}$ 代表對正常客戶造成的成本，$C_{\text{friction}}$ 與 $C_{\text{attrition}}$ 分別為正常客戶被加強驗證的不便成本與被轉人工審核的流失成本；$\text{Cost}_{\text{ops}}$ 則為作業成本，$C_{\text{verify}}$ 與 $C_{\text{review}}$ 分別為每件加強驗證與人工審核的成本。各參數的設定如 @tbl-cost-params 所示；由於實際數值因銀行而異，本研究將其視為情境假設，並以敏感度分析檢驗結論的穩健性。需要說明的是，@eq-cost 僅計入隨申請件數變動的成本，不包含系統開發、人員與模型維運等導入 AI 的固定成本；固定成本的影響另以損益兩平分析討論（[5.2](#sec-adoption) 節）。
 
 | 參數 | 意義 | 設定值 | 敏感度分析 |
-|:---------|:-------------------------|:---------------------|:---------------|
+|:--------|:----------------------|:------------------|:--------------------------|
 | $L_{\text{full}}$ | 詐騙帳戶完整功能下的損失 | 200,000 元（第一、二類每月上限） | ×0.25、×1、×4 |
 | $L_{\text{limited}}$ | 詐騙帳戶限額下的損失 | 50,000 元（第三類每月上限） | 隨 $L_{\text{full}}$ 等比調整；另單獨調整為 25,000、100,000 元 |
 | $v$ | 加強驗證攔下詐騙的機率 | 0.5 | 0.3、0.5、0.8 |
